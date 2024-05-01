@@ -16,47 +16,34 @@ async fn main() {
                 println!("accepted new connection");
                 tokio::spawn(async move {
                     handle_conn(stream).await
-
                 });
-
             }
             Err(e) => {
                 println!("error: {}", e);
             }
         }
+
     }
 }
 
 async fn handle_conn(stream: TcpStream) {
     let mut handler = resp::RespHandler::new(stream);
-
-    println!("Starting read loop");
-
     loop {
         let value = handler.read_value().await.unwrap();
-        println!("Got value : {:?}", value);
-
         let response = if let Some(v) = value {
             let (command, args) = extract_command(v).unwrap();
             match command.as_str() {
-                "ping" => {
-                    Value::SimpleString("PONG".to_string())
-                }
-                "echo" => {
-                    args.first().unwrap().clone()
-                }
-                c => {
-                    panic!("Cannot handle this command : {:?}", c)
-                }
+                "ping" => Value::SimpleString("PONG".to_string()),
+                "echo" => args.first().unwrap().clone(),
+                c => panic!("Cannot handle command {}", c),
             }
         } else {
             break;
         };
-        println!("Sendind value: {:?}", response);
-
-        handler.write_value(response).await.unwrap()
+        handler.write_value(response).await.unwrap();
     }
 }
+
 
 fn extract_command(value: Value) -> Result<(String, Vec<Value>), anyhow::Error> {
     match value {
