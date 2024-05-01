@@ -71,7 +71,7 @@ fn parse_simple_string(buffer: BytesMut) -> Result<(Value, usize)> {
         return Ok((Value::SimpleString(string), len + 1))
     }
 
-    return Err(anyhow::anyhow!("Invalid string {:?}", buffer));
+    Err(anyhow::anyhow!("Invalid string {:?}", buffer))
 
 }
 
@@ -95,7 +95,7 @@ fn parse_array(buffer: BytesMut) -> Result<(Value, usize)> {
 
     }
 
-    return Ok((Value::Array(items), bytes_consumed))
+    Ok((Value::Array(items), bytes_consumed))
 
 }
 
