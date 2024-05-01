@@ -1,6 +1,5 @@
 mod resp;
 
-use std::error::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use crate::resp::Value;
@@ -12,13 +11,11 @@ async fn main() {
     loop {
         let stream = listener.accept().await;
         match stream {
-            Ok((mut stream, _)) => {
+            Ok((stream, _)) => {
                 println!("accepted new connection");
                 tokio::spawn(async move {
-                    let mut buf = [0; 512];
-                    while stream.read(&mut buf).await.unwrap() > 0 {
-                        stream.write(b"+PONG\r\n").await.unwrap();
-                    }
+                    handle_conn(stream).await
+
                 });
 
             }
