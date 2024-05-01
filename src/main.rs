@@ -1,8 +1,8 @@
-mod resp;
-
+use resp::Value;
 use tokio::net::{TcpListener, TcpStream};
-use crate::resp::Value;
 use anyhow::Result;
+
+mod resp;
 
 #[tokio::main]
 async fn main() {
