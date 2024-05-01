@@ -12,8 +12,8 @@ async fn main() {
                 println!("accepted new connection");
                 tokio::spawn(async move {
                     let mut buf = [0; 512];
-                    while stream.read(&mut buf).unwrap() > 0 {
-                        stream.write(b"+PONG\r\n").unwrap();
+                    while stream.read(&mut buf).await.unwrap() > 0 {
+                        stream.write(b"+PONG\r\n").await.unwrap();
                     }
                 });
 
