@@ -1,17 +1,11 @@
 use tokio::{net::TcpStream, io::{AsyncReadExt, AsyncWriteExt}};
-
 use bytes::BytesMut;
-
 use anyhow::Result;
 
 #[derive(Clone, Debug)]
-
 pub enum Value {
-
     SimpleString(String),
-
     BulkString(String),
-
     Array(Vec<Value>),
 
 }
