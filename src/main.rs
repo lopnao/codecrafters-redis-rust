@@ -9,8 +9,8 @@ fn main() {
             Ok(mut stream) => {
                 println!("accepted new connection");
                 let mut buf = [0; 512];
-                stream.read_exact(&mut buf).unwrap();
-                stream.write_all(b"+PONG\r\n").unwrap();
+                stream.read(&mut buf).unwrap();
+                stream.write(b"+PONG\r\n").unwrap();
             }
 
             Err(e) => {
