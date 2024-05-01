@@ -1,12 +1,12 @@
 mod resp;
 
-
 use tokio::net::{TcpListener, TcpStream};
 use crate::resp::Value;
 use anyhow::Result;
 
 #[tokio::main]
 async fn main() {
+    println!("binding to port : {:?}", 6379);
     let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
 
     loop {
