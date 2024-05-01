@@ -8,7 +8,7 @@ async fn main() {
     loop {
         let stream = listener.accept().await;
         match stream {
-            Ok(mut stream) => {
+            Ok((mut stream, _)) => {
                 println!("accepted new connection");
                 tokio::spawn(async move {
                     let mut buf = [0; 512];
