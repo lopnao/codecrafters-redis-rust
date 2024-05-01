@@ -28,8 +28,12 @@ async fn main() {
 
 async fn handle_conn(stream: TcpStream) {
     let mut handler = resp::RespHandler::new(stream);
+    println!("Starting read loop");
+
     loop {
         let value = handler.read_value().await.unwrap();
+        println!("Got value {:?}", value);
+
         let response = if let Some(v) = value {
             let (command, args) = extract_command(v).unwrap();
             match command.as_str() {
@@ -40,18 +44,20 @@ async fn handle_conn(stream: TcpStream) {
         } else {
             break;
         };
+        println!("Sending value {:?}", response);
+
         handler.write_value(response).await.unwrap();
     }
 }
 
 
-fn extract_command(value: Value) -> Result<(String, Vec<Value>), anyhow::Error> {
+fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
     match value {
-        Value::SimpleString(s) => {
-            Ok((s, vec![]))
+        Value::SimpleString(_s) => {
+            Err(anyhow::anyhow!("SimpleString value response is todo!"))
         }
-        Value::BulkString(s) => {
-            Ok((s, vec![]))
+        Value::BulkString(_s) => {
+            Err(anyhow::anyhow!("BulkString value response is todo!"))
         }
         Value::Array(a) => {
             Ok((unpack_bulk_str(a.first().unwrap().clone())?, a.into_iter().skip(1).collect()))
@@ -59,7 +65,7 @@ fn extract_command(value: Value) -> Result<(String, Vec<Value>), anyhow::Error> 
     }
 }
 
-fn unpack_bulk_str(value: Value) -> Result<String, anyhow::Error> {
+fn unpack_bulk_str(value: Value) -> Result<String> {
     match value {
         Value::BulkString(s) => Ok(s),
         _ => Err(anyhow::anyhow!("Expected command to be a bulk string"))
