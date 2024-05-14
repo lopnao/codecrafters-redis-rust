@@ -58,7 +58,6 @@ impl RespHandler {
 
 fn parse_message(buffer: BytesMut) -> Result<(Value, usize)> {
 
-    println!("TEMP buffer = {:?}", buffer);
     match buffer[0] as char {
         '+' => parse_simple_string(buffer),
         '*' => parse_array(buffer),
