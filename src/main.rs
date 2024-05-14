@@ -18,8 +18,9 @@ async fn main() {
         match stream {
             Ok((stream, _)) => {
                 println!("accepted new connection");
+                let data1 = Arc::clone(&data);
                 tokio::spawn(async move {
-                    handle_conn(stream).await
+                    handle_conn(stream, data1).await
                 });
             }
             Err(e) => {
@@ -30,7 +31,7 @@ async fn main() {
     }
 }
 
-async fn handle_conn(stream: TcpStream) {
+async fn handle_conn(stream: TcpStream, data1: Arc<Mutex<HashMap<String, String>>>) {
     let mut handler = resp::RespHandler::new(stream);
     println!("Starting read loop");
 
@@ -44,13 +45,19 @@ async fn handle_conn(stream: TcpStream) {
                 "ping"  => Value::SimpleString("PONG".to_string()),
                 "echo"  => args.first().unwrap().clone(),
                 "set"   => {
-                    //todo
-                    Value::SimpleString("OK".to_string())
+                    let mut data1 = data1.lock().unwrap();
+                    if args.len() > 1 {
+                        data1.insert(unpack_bulk_str(args[0].clone()).unwrap(), unpack_bulk_str(args[1].clone()).unwrap());
+                        Value::SimpleString("OK".to_string())
+                    } else { Value::SimpleString("NOK".to_string()) }
                 },
                 "get"   => {
-                    //todo
-                    let val = "TODO!".to_string();
-                    Value::SimpleString(val)
+                    let data1 = data1.lock().unwrap();
+                    if !args.is_empty() {
+                        let val = data1.get(&unpack_bulk_str(args[0].clone()).unwrap()).unwrap();
+                        Value::SimpleString(val.clone())
+                    } else { Value::SimpleString("ERROR".to_string()) }
+
                 },
                 c => panic!("Cannot handle command {}", c),
             }
