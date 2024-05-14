@@ -50,9 +50,6 @@ pub fn server_info(runtime: &RedisRuntime, args: Vec<Value>) -> Value {
         match arg.as_str() {
             "replication" => {
                 res.push(Value::BulkString(format!("role:{}", &runtime.replication_role)));
-                res.push(Value::BulkString(format!("role:{}", &runtime.replication_role)));
-                res.push(Value::BulkString(format!("role:{}", &runtime.replication_role)));
-                res.push(Value::BulkString("role:master".to_string()));
             },
             _ => {
                 return Value::NullBulkString();
