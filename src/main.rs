@@ -7,6 +7,7 @@ mod resp;
 #[tokio::main]
 async fn main() {
     println!("binding to port : {:?}", 6379);
+
     let listener = TcpListener::bind("0.0.0.0:6379").await.unwrap();
 
     loop {
@@ -37,8 +38,12 @@ async fn handle_conn(stream: TcpStream) {
         let response = if let Some(v) = value {
             let (command, args) = extract_command(v).unwrap();
             match command.to_ascii_lowercase().as_str() {
-                "ping" => Value::SimpleString("PONG".to_string()),
-                "echo" => args.first().unwrap().clone(),
+                "ping"  => Value::SimpleString("PONG".to_string()),
+                "echo"  => args.first().unwrap().clone(),
+                "set"   => {
+                    //todo
+                    Value::SimpleString("OK".to_string())
+                }
                 c => panic!("Cannot handle command {}", c),
             }
         } else {
