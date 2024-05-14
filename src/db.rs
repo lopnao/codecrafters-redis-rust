@@ -82,14 +82,17 @@ pub fn key_expiry_thread(data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_h
     loop {
         let now = Instant::now();
 
-        let mut data1 = data1.lock().unwrap();
-        let mut exp_heap1 = exp_heap1.lock().unwrap();
+        {
+            let mut data2 = data1.lock().unwrap();
+            let mut exp_heap2 = exp_heap1.lock().unwrap();
 
-        // go over expiring entries
-        while let Some((Reverse(instant), key)) = exp_heap1.peek() {
-            if *instant < now {
-                data1.remove(key);
-                exp_heap1.pop();
+            // go over expiring entries
+            while let Some((Reverse(instant), key)) = exp_heap2.peek() {
+                if *instant < now {
+                    println!("Removing {:?} from data with expiring_time = {:?} // time now is {:?}", key, *instant, now);
+                    data2.remove(key);
+                    exp_heap2.pop();
+                } else { break; }
             }
         }
 
