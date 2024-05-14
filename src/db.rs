@@ -5,6 +5,7 @@ use std::thread;
 use tokio::time::Instant;
 use std::time::Duration;
 use crate::resp::Value;
+use crate::structs::RedisRuntime;
 use crate::unpack_bulk_str;
 
 pub fn data_set(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) -> Value {
@@ -40,6 +41,26 @@ pub fn data_get(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>
             None    => { Value::NullBulkString() }
         }
     } else { Value::SimpleString("ERROR".to_string()) }
+}
+
+pub fn server_info(runtime: &RedisRuntime, args: Vec<Value>) -> Value {
+    let mut res = vec![];
+    let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
+    for arg in args {
+        match arg.as_str() {
+            "replication" => {
+                res.push(Value::BulkString(format!("role:{}", &runtime.replication_role)));
+                res.push(Value::BulkString(format!("role:{}", &runtime.replication_role)));
+                res.push(Value::BulkString(format!("role:{}", &runtime.replication_role)));
+                res.push(Value::BulkString("role:master".to_string()));
+            },
+            _ => {
+                return Value::NullBulkString();
+            },
+        }
+    }
+
+    Value::Array(res)
 }
 
 #[derive(Debug, Clone)]
