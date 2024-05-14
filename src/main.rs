@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use resp::Value;
 use tokio::net::{TcpListener, TcpStream};
 use anyhow::Result;
@@ -9,6 +11,7 @@ async fn main() {
     println!("binding to port : {:?}", 6379);
 
     let listener = TcpListener::bind("0.0.0.0:6379").await.unwrap();
+    let data: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
 
     loop {
         let stream = listener.accept().await;
@@ -43,7 +46,12 @@ async fn handle_conn(stream: TcpStream) {
                 "set"   => {
                     //todo
                     Value::SimpleString("OK".to_string())
-                }
+                },
+                "get"   => {
+                    //todo
+                    let val = "TODO!".to_string();
+                    Value::SimpleString(val)
+                },
                 c => panic!("Cannot handle command {}", c),
             }
         } else {
