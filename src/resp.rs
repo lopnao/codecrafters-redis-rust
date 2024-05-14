@@ -18,9 +18,9 @@ impl Value {
             Value::SimpleString(s) => format!("+{}\r\n", s),
             Value::NullBulkString() => "$-1\r\n".to_string(),
             Value::BulkString(s) => format!("${}\r\n{}\r\n", s.chars().count(), s),
-            //Value::Array(a) => format!("{}", a.iter().fold("".to_string(), |acc,s| format!("{}{}",acc, s.clone().serialize()),)),
+            Value::Array(a) => format!("{}\r\n", a.iter().fold(format!("*{}\r\n", a.len()), |acc, s| format!("{}{}", acc, s.clone().serialize()),)),
 
-            _ => panic!("Unsupported value for serialize"),
+            //_ => panic!("Unsupported value for serialize"),
         }
     }
 }

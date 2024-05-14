@@ -8,10 +8,12 @@ use anyhow::Result;
 use tokio::time::Instant;
 use clap::Parser;
 use db::KeyValueData;
-use crate::db::{data_get, data_set, key_expiry_thread};
+use crate::db::{data_get, data_set, key_expiry_thread, server_info};
+use crate::structs::RedisRuntime;
 
 mod resp;
 mod db;
+mod structs;
 
 const EXPIRY_LOOP_TIME: u64 = 1; // 500 milli seconds
 const DEFAULT_LISTENING_PORT: u16 = 6379;
@@ -21,6 +23,7 @@ async fn main() {
     let args = Args::parse();
     println!("binding to port : {:?}", args.port);
 
+    let runtime = RedisRuntime::new();
     let listener = TcpListener::bind(format!("0.0.0.0:{}", args.port)).await.unwrap();
     let data: Arc<Mutex<HashMap<String, KeyValueData>>> = Arc::new(Mutex::new(HashMap::new()));
     let exp_heap: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>> = Arc::new(Mutex::new(BinaryHeap::new()));
@@ -39,7 +42,7 @@ async fn main() {
                 let data1 = Arc::clone(&data);
                 let exp_heap1 = Arc::clone(&exp_heap);
                 tokio::spawn(async move {
-                    handle_conn(stream, data1, exp_heap1).await
+                    handle_conn(stream, &runtime, data1, exp_heap1).await
                 });
             }
             Err(e) => {
@@ -57,7 +60,7 @@ struct Args {
     port: u16,
 }
 
-async fn handle_conn(stream: TcpStream, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
+async fn handle_conn(stream: TcpStream, runtime: &RedisRuntime, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
     let mut handler = resp::RespHandler::new(stream);
     println!("Starting read loop");
 
@@ -80,14 +83,19 @@ async fn handle_conn(stream: TcpStream, data1: Arc<Mutex<HashMap<String, KeyValu
                     data_get(args, data2)
 
                 },
+                "info"  => {
+                    server_info(runtime, args)
+                }
                 c => panic!("Cannot handle command {}", c),
             }
         } else {
             break;
         };
         println!("Sending value {:?}", response);
+        println!("Serialized = {:?}", response.clone().serialize());
 
         handler.write_value(response).await.unwrap();
+
     }
 }
 
