@@ -6,6 +6,7 @@ use resp::Value;
 use tokio::net::{TcpListener, TcpStream};
 use anyhow::Result;
 use tokio::time::Instant;
+use clap::Parser;
 use db::KeyValueData;
 use crate::db::{data_get, data_set, key_expiry_thread};
 
@@ -13,12 +14,14 @@ mod resp;
 mod db;
 
 const EXPIRY_LOOP_TIME: u64 = 1; // 500 milli seconds
+const DEFAULT_LISTENING_PORT: u16 = 6379;
 
 #[tokio::main]
 async fn main() {
-    println!("binding to port : {:?}", 6379);
+    let args = Args::parse();
+    println!("binding to port : {:?}", args.port);
 
-    let listener = TcpListener::bind("0.0.0.0:6379").await.unwrap();
+    let listener = TcpListener::bind(format!("0.0.0.0:{}", args.port)).await.unwrap();
     let data: Arc<Mutex<HashMap<String, KeyValueData>>> = Arc::new(Mutex::new(HashMap::new()));
     let exp_heap: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>> = Arc::new(Mutex::new(BinaryHeap::new()));
 
@@ -45,6 +48,13 @@ async fn main() {
         }
 
     }
+}
+
+#[derive(Debug, Default, Parser)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[clap(default_value_t=DEFAULT_LISTENING_PORT, short, long)]
+    port: u16,
 }
 
 async fn handle_conn(stream: TcpStream, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
