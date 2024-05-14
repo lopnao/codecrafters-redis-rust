@@ -12,7 +12,7 @@ use crate::db::{data_get, data_set, key_expiry_thread};
 mod resp;
 mod db;
 
-const EXPIRY_LOOP_TIME: u64 = 15; // 500 milli seconds
+const EXPIRY_LOOP_TIME: u64 = 1; // 500 milli seconds
 
 #[tokio::main]
 async fn main() {
