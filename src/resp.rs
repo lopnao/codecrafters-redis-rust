@@ -106,14 +106,13 @@ fn parse_bulk_string(buffer: BytesMut) -> Result<(Value, usize)> {
         (bulk_str_len, len + 1)
 
     } else {
-        return Err(anyhow::anyhow!("Invalid array format {:?}", buffer));
+        return Err(anyhow::anyhow!("Invalid bulk string format {:?}", buffer));
     };
 
     let end_of_bulk_str = bytes_consumed + bulk_str_len as usize;
     let total_parsed = end_of_bulk_str + 2;
 
     Ok((Value::BulkString(String::from_utf8(buffer[bytes_consumed..end_of_bulk_str].to_vec())?), total_parsed))
-
 }
 
 fn read_until_crlf(buffer: &[u8]) -> Option<(&[u8], usize)> {
