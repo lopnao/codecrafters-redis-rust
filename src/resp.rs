@@ -5,6 +5,7 @@ use anyhow::Result;
 #[derive(Clone, Debug)]
 pub enum Value {
     SimpleString(String),
+    NullBulkString(),
     BulkString(String),
     Array(Vec<Value>),
 
@@ -15,6 +16,7 @@ impl Value {
     pub fn serialize(self) -> String {
         match self {
             Value::SimpleString(s) => format!("+{}\r\n", s),
+            Value::NullBulkString() => "$-1\r\n".to_string(),
             Value::BulkString(s) => format!("${}\r\n{}\r\n", s.chars().count(), s),
             //Value::Array(a) => format!("{}", a.iter().fold("".to_string(), |acc,s| format!("{}{}",acc, s.clone().serialize()),)),
 

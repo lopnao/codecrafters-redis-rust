@@ -1,17 +1,32 @@
-use std::collections::HashMap;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use resp::Value;
 use tokio::net::{TcpListener, TcpStream};
 use anyhow::Result;
+use tokio::time::Instant;
+use db::KeyValueData;
+use crate::db::{data_get, data_set, key_expiry_thread};
 
 mod resp;
+mod db;
+
+const EXPIRY_LOOP_TIME: u64 = 250; // 500 milli seconds
 
 #[tokio::main]
 async fn main() {
     println!("binding to port : {:?}", 6379);
 
     let listener = TcpListener::bind("0.0.0.0:6379").await.unwrap();
-    let data: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
+    let data: Arc<Mutex<HashMap<String, KeyValueData>>> = Arc::new(Mutex::new(HashMap::new()));
+    let exp_heap: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>> = Arc::new(Mutex::new(BinaryHeap::new()));
+
+    let data_clean = Arc::clone(&data);
+    let exp_clean = Arc::clone(&exp_heap);
+    let _ = thread::spawn(move || key_expiry_thread(data_clean, exp_clean, EXPIRY_LOOP_TIME));
+
+
 
     loop {
         let stream = listener.accept().await;
@@ -19,8 +34,9 @@ async fn main() {
             Ok((stream, _)) => {
                 println!("accepted new connection");
                 let data1 = Arc::clone(&data);
+                let exp_heap1 = Arc::clone(&exp_heap);
                 tokio::spawn(async move {
-                    handle_conn(stream, data1).await
+                    handle_conn(stream, data1, exp_heap1).await
                 });
             }
             Err(e) => {
@@ -31,7 +47,7 @@ async fn main() {
     }
 }
 
-async fn handle_conn(stream: TcpStream, data1: Arc<Mutex<HashMap<String, String>>>) {
+async fn handle_conn(stream: TcpStream, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
     let mut handler = resp::RespHandler::new(stream);
     println!("Starting read loop");
 
@@ -45,18 +61,13 @@ async fn handle_conn(stream: TcpStream, data1: Arc<Mutex<HashMap<String, String>
                 "ping"  => Value::SimpleString("PONG".to_string()),
                 "echo"  => args.first().unwrap().clone(),
                 "set"   => {
-                    let mut data1 = data1.lock().unwrap();
-                    if args.len() > 1 {
-                        data1.insert(unpack_bulk_str(args[0].clone()).unwrap(), unpack_bulk_str(args[1].clone()).unwrap());
-                        Value::SimpleString("OK".to_string())
-                    } else { Value::SimpleString("NOK".to_string()) }
+                    let data2 = Arc::clone(&data1);
+                    let exp_heap2 = Arc::clone(&exp_heap1);
+                    data_set(args, data2, exp_heap2)
                 },
                 "get"   => {
-                    let data1 = data1.lock().unwrap();
-                    if !args.is_empty() {
-                        let val = data1.get(&unpack_bulk_str(args[0].clone()).unwrap()).unwrap();
-                        Value::SimpleString(val.clone())
-                    } else { Value::SimpleString("ERROR".to_string()) }
+                    let data2 = Arc::clone(&data1);
+                    data_get(args, data2)
 
                 },
                 c => panic!("Cannot handle command {}", c),
@@ -79,6 +90,9 @@ fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
         Value::BulkString(_s) => {
             Err(anyhow::anyhow!("BulkString value response is todo!"))
         }
+        Value::NullBulkString() => {
+            Err(anyhow::anyhow!("NullBulkString value response is todo!"))
+        }
         Value::Array(a) => {
             Ok((unpack_bulk_str(a.first().unwrap().clone())?, a.into_iter().skip(1).collect()))
         }
@@ -91,3 +105,4 @@ fn unpack_bulk_str(value: Value) -> Result<String> {
         _ => Err(anyhow::anyhow!("Expected command to be a bulk string"))
     }
 }
+
