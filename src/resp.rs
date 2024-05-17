@@ -7,6 +7,7 @@ pub enum Value {
     SimpleString(String),
     NullBulkString(),
     BulkString(String),
+    ArrayBulkString(Vec<Value>),
     Array(Vec<Value>),
 
 }
@@ -19,15 +20,17 @@ impl Value {
             Value::NullBulkString() => "$-1\r\n".to_string(),
             Value::BulkString(s) => format!("${}\r\n{}\r\n", s.chars().count(), s),
             // Value::Array(a) => format!("${}\r\n{}\r\n", a[0].clone().serialize().chars().count(), a[0].clone().serialize()),
-            Value::Array(a) => {
+            Value::ArrayBulkString(a) => {
                 let a_final = a.iter().fold("".to_string(), |acc, s| format!("{}{}\r\n", acc, match s {
                     Value::SimpleString(s) => { s }
                     Value::NullBulkString() => { "" }
                     Value::BulkString(s) => { s }
+                    Value::ArrayBulkString(_) => { "" }
                     Value::Array(_) => { "" }
                 }));
                 format!("${}\r\n{}\r\n", a_final.chars().count(), a_final)
-            }
+            },
+            Value::Array(a) => format!("{}\r\n", a.iter().fold(format!("*{}\r\n", a.len()), |acc, s| format!("{}{}", acc, s.clone().serialize()),)),
         }
 
 
@@ -114,7 +117,9 @@ fn parse_array(buffer: BytesMut) -> Result<(Value, usize)> {
 
     }
 
-    Ok((Value::Array(items), bytes_consumed))
+    println!("items = {:?}", items);
+
+    Ok((Value::ArrayBulkString(items), bytes_consumed))
 
 }
 

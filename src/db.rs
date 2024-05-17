@@ -71,7 +71,7 @@ pub fn server_info(server_info_clone: Arc<RedisServer>, args: Vec<Value>) -> Val
         }
     }
 
-    Value::Array(res)
+    Value::ArrayBulkString(res)
 }
 
 #[derive(Debug, Clone)]

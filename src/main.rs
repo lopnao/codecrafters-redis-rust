@@ -1,7 +1,8 @@
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
+use std::fmt::Error;
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::{io, thread};
 use resp::Value;
 use tokio::net::{TcpListener, TcpStream};
 use anyhow::Result;
@@ -11,11 +12,13 @@ use nanoid::nanoid;
 use uuid::Uuid;
 use thiserror::Error;
 use db::KeyValueData;
+use crate::connect::connect_to_master;
 use crate::db::{data_get, data_set, key_expiry_thread, server_info};
 
 mod resp;
 mod db;
 mod structs;
+mod connect;
 
 const EXPIRY_LOOP_TIME: u64 = 1; // 1 milli seconds
 
@@ -34,6 +37,18 @@ pub enum ServerError {
         expected: String,
         found: String,
     },
+    #[error("unknown server error")]
+    Unknown,
+}
+
+#[derive(Error, Debug)]
+pub enum SlaveError {
+    #[error("`{0}`")]
+    Redaction(String),
+    #[error("Connection to master error")]
+    Connection(#[from] io::Error),
+    #[error("Connection to master error : No Host Provided")]
+    NoHost,
     #[error("unknown server error")]
     Unknown,
 }
@@ -109,6 +124,8 @@ async fn main() {
         }
     };
 
+
+
     let addr = format!("0.0.0.0:{}", server_info.self_port.to_string());
 
     // let args = Args::parse();
@@ -121,6 +138,23 @@ async fn main() {
     let data_clean = Arc::clone(&data);
     let exp_clean = Arc::clone(&exp_heap);
     let _ = thread::spawn(move || key_expiry_thread(data_clean, exp_clean, EXPIRY_LOOP_TIME));
+
+    if !server_info.is_master {
+        let mut stream_to_master = connect_to_master(server_info.master_host.clone(), server_info.master_port.clone()).await;
+
+        match stream_to_master {
+            Ok(stream_to_master) => {
+                let data1 = Arc::clone(&data);
+                let exp_heap1 = Arc::clone(&exp_heap);
+                let server_info_clone = server_info.clone();
+                tokio::spawn(async move {
+                    handle_conn_to_master(stream_to_master, server_info_clone, data1, exp_heap1).await
+                });
+            }
+            Err(e) => { println!("error connecting to master: {}", e); }
+        }
+    }
+
 
 
 
@@ -190,6 +224,19 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<RedisServer>, dat
     }
 }
 
+async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: Arc<RedisServer>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
+    let mut handler = resp::RespHandler::new(stream_to_master);
+    println!("Connection to master handled, trying to send HandShake.");
+    let mut handshake = Value::Array(vec![Value::BulkString("PING".to_string())]);
+    handler.write_value(handshake).await.unwrap();
+
+    loop {
+        let value = handler.read_value().await.unwrap();
+        println!("Got value {:?}", value);
+    }
+
+}
+
 
 fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
     match value {
@@ -203,6 +250,9 @@ fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
             Err(anyhow::anyhow!("NullBulkString value response is todo!"))
         }
         Value::Array(a) => {
+            Ok((unpack_bulk_str(a[0].clone())?, a[1..].to_vec()))
+        }
+        Value::ArrayBulkString(a) => {
             Ok((unpack_bulk_str(a.first().unwrap().clone())?, a.into_iter().skip(1).collect()))
         }
     }
@@ -212,6 +262,20 @@ fn unpack_bulk_str(value: Value) -> Result<String> {
     match value {
         Value::BulkString(s) => Ok(s),
         _ => Err(anyhow::anyhow!("Expected command to be a bulk string"))
+    }
+}
+
+fn unpack_array(value: Value) -> Result<Vec<Value>> {
+    match value {
+        Value::Array(a) => Ok(a),
+        _ => Err(anyhow::anyhow!("Expected command to be an array"))
+    }
+}
+
+fn unpack_simple_str(value: Value) -> Result<String> {
+    match value {
+        Value::SimpleString(s) => Ok(s),
+        _ => Err(anyhow::anyhow!("Expected command to be a simple string"))
     }
 }
 
