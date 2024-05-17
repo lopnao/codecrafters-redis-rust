@@ -12,7 +12,7 @@ use nanoid::nanoid;
 use uuid::Uuid;
 use thiserror::Error;
 use db::KeyValueData;
-use crate::connect::connect_to_master;
+use crate::connect::{configure_replica, connect_to_master};
 use crate::db::{data_get, data_set, key_expiry_thread, server_info};
 
 mod resp;
@@ -210,7 +210,10 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<RedisServer>, dat
                 },
                 "info"  => {
                     server_info(server_info_clone.clone(), args)
-                }
+                },
+                "replconf" => {
+                    configure_replica(args)
+                },
                 c => panic!("Cannot handle command {}", c),
             }
         } else {
@@ -229,6 +232,32 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
     println!("Connection to master handled, trying to send HandShake.");
     let mut handshake = Value::Array(vec![Value::BulkString("PING".to_string())]);
     handler.write_value(handshake).await.unwrap();
+    let value = handler.read_value().await.unwrap();
+    if let Some(value) = value {
+        if value == Value::SimpleString("PONG".to_string()) {
+            let cmd = vec![
+                Value::BulkString("REPLCONF".to_string()),
+                Value::BulkString("listening-port".to_string()),
+                Value::BulkString(format!("{}", server_info_clone.self_port)),
+            ];
+            handshake = Value::Array(cmd);
+            handler.write_value(handshake).await.unwrap();
+        }
+    }
+    let value = handler.read_value().await.unwrap();
+    if value == Some(Value::SimpleString("OK".to_string())) {
+        let cmd = vec![
+            Value::BulkString("REPLCONF".to_string()),
+            Value::BulkString("capa".to_string()),
+            Value::BulkString("psync2".to_string()),
+        ];
+        handshake = Value::Array(cmd);
+        handler.write_value(handshake).await.unwrap();
+    }
+    let value = handler.read_value().await.unwrap();
+    if value == Some(Value::SimpleString("OK".to_string())) {
+        println!("HANDSHAKE IS GOOD SO FAR!")
+    }
 
     loop {
         let value = handler.read_value().await.unwrap();
