@@ -5,8 +5,7 @@ use std::thread;
 use tokio::time::Instant;
 use std::time::Duration;
 use crate::resp::Value;
-use crate::structs::RedisRuntime;
-use crate::unpack_bulk_str;
+use crate::{RedisServer, unpack_bulk_str};
 
 pub fn data_set(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) -> Value {
     let mut data1 = data1.lock().unwrap();
@@ -43,13 +42,28 @@ pub fn data_get(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>
     } else { Value::SimpleString("ERROR".to_string()) }
 }
 
-pub fn server_info(runtime: &RedisRuntime, args: Vec<Value>) -> Value {
+pub fn server_info(server_info_clone: Arc<RedisServer>, args: Vec<Value>) -> Value {
     let mut res = vec![];
     let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
     for arg in args {
         match arg.as_str() {
             "replication" => {
-                res.push(Value::BulkString(format!("role:{}", &runtime.replication_role)));
+                let is_master = server_info_clone.is_master;
+                let role = if server_info_clone.is_master { "master" } else { "slave" };
+                res.push(Value::BulkString("# Replication".to_string()));
+                res.push(Value::BulkString(format!("role:{}", role)));
+                if is_master {
+                    res.push(Value::BulkString(format!("connected_slaves:{}", server_info_clone.connected_slaves)));
+                }
+                res.push(Value::BulkString(format!("master_replid:{}", server_info_clone.master_replid)));
+                res.push(Value::BulkString(format!("master_repl_offset:{}", server_info_clone.master_repl_offset)));
+                res.push(Value::BulkString(format!("master_nanoid:{}", server_info_clone.master_nanoid)));
+                if !is_master {
+                    if let (Some(master_host), Some(master_port)) = (&server_info_clone.master_host, &server_info_clone.master_port) {
+                        res.push(Value::BulkString(format!("master_host:{}", master_host)));
+                        res.push(Value::BulkString(format!("master_port:{}", master_port)));
+                    }
+                }
             },
             _ => {
                 return Value::NullBulkString();

@@ -7,24 +7,114 @@ use tokio::net::{TcpListener, TcpStream};
 use anyhow::Result;
 use tokio::time::Instant;
 use clap::Parser;
+use nanoid::nanoid;
+use uuid::Uuid;
+use thiserror::Error;
 use db::KeyValueData;
 use crate::db::{data_get, data_set, key_expiry_thread, server_info};
-use crate::structs::RedisRuntime;
 
 mod resp;
 mod db;
 mod structs;
 
-const EXPIRY_LOOP_TIME: u64 = 1; // 500 milli seconds
-const DEFAULT_LISTENING_PORT: u16 = 6379;
+const EXPIRY_LOOP_TIME: u64 = 1; // 1 milli seconds
+
+#[derive(Error, Debug)]
+pub enum ServerError {
+    #[error("`{0}`")]
+    Redaction(String),
+    #[error("Bad replicaof argument")]
+    BadReplicaOf,
+    #[error("Bad replicaof port")]
+    BadReplicaPort,
+    #[error("Server Initialisation Error")]
+    ServerInit,
+    #[error("invalid header (expected {expected:?}, found {found:?})")]
+    InvalidHeader {
+        expected: String,
+        found: String,
+    },
+    #[error("unknown server error")]
+    Unknown,
+}
+
+#[allow(dead_code)]
+struct RedisServer {
+    is_master: bool,
+    pub connected_slaves: u32,
+    pub master_replid: Uuid,
+    pub master_repl_offset: u32,
+    pub master_nanoid: String,
+    pub master_host: Option<String>,
+    pub master_port: Option<u16>,
+    pub self_port: u16,
+}
+
+impl RedisServer {
+
+    fn init() -> Result<Self, ServerError> {
+        let mut self_port = 6379;
+        let args = Args::parse();
+        if let Some(port) = args.port {
+            self_port = port;
+        }
+
+        let mut master_host: Option<String> = None;
+        let mut master_port: Option<u16> = None;
+        let mut is_master = true;
+
+        if let Some(replica) = args.replicaof {
+            is_master = false;
+            let mut replica_info: Vec<&str> = replica.split_whitespace().collect();
+            if replica_info.len() != 2 {
+                return Err(ServerError::BadReplicaOf);
+            }
+
+            master_host = Some(replica_info.remove(0).to_string());
+            match replica_info.remove(0).parse::<u16>() {
+                Ok(port) => master_port = Some(port),
+                Err(_) => return Err(ServerError::BadReplicaPort),
+            };
+        }
+
+        return Ok(RedisServer {
+            is_master,
+            connected_slaves: 0,
+            master_replid: Uuid::new_v4(),
+            master_repl_offset: 0,
+            master_nanoid: nanoid!(),
+            master_host,
+            master_port,
+            self_port,
+        })
+    }
+
+}
+
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(long)]
+    port: Option<u16>,
+    #[arg(long)]
+    replicaof: Option<String>,
+}
 
 #[tokio::main]
 async fn main() {
-    let args = Args::parse();
-    println!("binding to port : {:?}", args.port);
+    let server_info = match RedisServer::init() {
+        Ok(s) => Arc::new(s),
+        Err(e) => {
+            println!("Unable to initialize Redis server: {e}");
+            return;
+        }
+    };
 
-    let runtime = RedisRuntime::new();
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", args.port)).await.unwrap();
+    let addr = format!("0.0.0.0:{}", server_info.self_port.to_string());
+
+    // let args = Args::parse();
+    println!("Listening on address {addr}");
+
+    let listener = TcpListener::bind(addr).await.unwrap();
     let data: Arc<Mutex<HashMap<String, KeyValueData>>> = Arc::new(Mutex::new(HashMap::new()));
     let exp_heap: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>> = Arc::new(Mutex::new(BinaryHeap::new()));
 
@@ -41,8 +131,9 @@ async fn main() {
                 println!("accepted new connection");
                 let data1 = Arc::clone(&data);
                 let exp_heap1 = Arc::clone(&exp_heap);
+                let server_info_clone = server_info.clone();
                 tokio::spawn(async move {
-                    handle_conn(stream, &runtime, data1, exp_heap1).await
+                    handle_conn(stream, server_info_clone, data1, exp_heap1).await
                 });
             }
             Err(e) => {
@@ -53,14 +144,14 @@ async fn main() {
     }
 }
 
-#[derive(Debug, Default, Parser)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    #[clap(default_value_t=DEFAULT_LISTENING_PORT, short, long)]
-    port: u16,
-}
+// #[derive(Debug, Default, Parser)]
+// #[command(author, version, about, long_about = None)]
+// struct Args {
+//     #[clap(default_value_t=DEFAULT_LISTENING_PORT, short, long)]
+//     port: u16,
+// }
 
-async fn handle_conn(stream: TcpStream, runtime: &RedisRuntime, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
+async fn handle_conn(stream: TcpStream, server_info_clone: Arc<RedisServer>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
     let mut handler = resp::RespHandler::new(stream);
     println!("Starting read loop");
 
@@ -84,7 +175,7 @@ async fn handle_conn(stream: TcpStream, runtime: &RedisRuntime, data1: Arc<Mutex
 
                 },
                 "info"  => {
-                    server_info(runtime, args)
+                    server_info(server_info_clone.clone(), args)
                 }
                 c => panic!("Cannot handle command {}", c),
             }
