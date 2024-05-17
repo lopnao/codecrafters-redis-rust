@@ -2,7 +2,7 @@ use tokio::{net::TcpStream, io::{AsyncReadExt, AsyncWriteExt}};
 use bytes::BytesMut;
 use anyhow::Result;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     SimpleString(String),
     NullBulkString(),
@@ -30,7 +30,7 @@ impl Value {
                 }));
                 format!("${}\r\n{}\r\n", a_final.chars().count(), a_final)
             },
-            Value::Array(a) => format!("{}\r\n", a.iter().fold(format!("*{}\r\n", a.len()), |acc, s| format!("{}{}", acc, s.clone().serialize()),)),
+            Value::Array(a) => format!("{}", a.iter().fold(format!("*{}\r\n", a.len()), |acc, s| format!("{}{}", acc, s.clone().serialize()),)),
         }
 
 
@@ -151,4 +151,16 @@ fn read_until_crlf(buffer: &[u8]) -> Option<(&[u8], usize)> {
 
 fn parse_int(buffer: &[u8]) -> Result<i64> {
     Ok(String::from_utf8(buffer.to_vec())?.parse::<i64>()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_serialize() {
+        assert_eq!(Value::SimpleString("PONG".to_string()).serialize(), "+PONG\r\n");
+        assert_eq!(Value::BulkString("PONG".to_string()).serialize(), "$4\r\nPONG\r\n");
+        assert_eq!(Value::Array(vec![Value::BulkString("PONG".to_string())]).serialize(), "*1\r\n$4\r\nPONG\r\n");
+    }
 }
