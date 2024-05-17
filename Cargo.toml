@@ -24,3 +24,14 @@ bytes = "1.3.0"                                     # helps manage buffers
 thiserror = "1.0.32"                                # error handling
 tokio = { version = "1.23.0", features = ["full"] }
 clap = { version = "4.5.4", features = ["derive"] } # async networking
+nanoid = "0.4.0"
+
+
+
+[dependencies.uuid]
+version = "1.8.0"
+features = [
+    "v4",                # Lets you generate random UUIDs
+    "fast-rng",          # Use a faster (but still sufficiently random) RNG
+    "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
+]
