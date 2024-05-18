@@ -9,6 +9,8 @@ use anyhow::Result;
 use tokio::time::Instant;
 use clap::Parser;
 use nanoid::nanoid;
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 use uuid::{Uuid, uuid};
 use thiserror::Error;
 use db::KeyValueData;
@@ -57,7 +59,7 @@ pub enum SlaveError {
 struct RedisServer {
     is_master: bool,
     pub connected_slaves: u32,
-    pub master_replid: Uuid,
+    pub master_replid: String,
     pub master_repl_offset: u32,
     pub master_nanoid: String,
     pub master_host: Option<String>,
@@ -92,10 +94,17 @@ impl RedisServer {
             };
         }
 
+        let replid: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(40)
+            .map(char::from)
+            .collect();
+        println!(" Creating replid : {}", replid);
+
         return Ok(RedisServer {
             is_master,
             connected_slaves: 0,
-            master_replid: Uuid::new_v4(),
+            master_replid: replid,
             master_repl_offset: 0,
             master_nanoid: nanoid!(),
             master_host,
@@ -104,7 +113,7 @@ impl RedisServer {
         })
     }
 
-    fn change_replid(&mut self, new_replid: Uuid) {
+    fn change_replid(&mut self, new_replid: String) {
         self.master_replid = new_replid;
     }
 
@@ -286,12 +295,10 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
         match command.to_ascii_lowercase().as_str() {
             "fullresync"      => {
                 if let Value::SimpleString(s) = args[0].clone() {
-                    if let Ok(new_uuid) = Uuid::parse_str(&s) {
-                        {
-                            let _temp = server_info_clone.lock().unwrap().change_replid(new_uuid);
-                            println!("Changed internal master_id to : {}", s);
-                        };
-                    }
+                    {
+                        println!("Changed internal master_id to : {}", s);
+                        let _temp = server_info_clone.lock().unwrap().change_replid(s);
+                    };
                 }
 
             },
