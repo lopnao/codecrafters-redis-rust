@@ -3,6 +3,7 @@ use tokio::net::TcpStream;
 use crate::resp::Value;
 use crate::{RedisServer, SlaveError, unpack_bulk_str};
 use crate::SlaveError::NoHost;
+use base64::prelude::*;
 
 pub async fn connect_to_master(master_host: Option<String>, master_port: Option<u16>) -> Result<TcpStream, SlaveError> {
     if master_host.is_none() { return Err(NoHost); }
@@ -36,4 +37,10 @@ pub fn psync(args: Vec<Value>, server_info: Arc<Mutex<RedisServer>>) -> Value {
         return Value::SimpleString(format!("FULLRESYNC {} 0", master_replid));
     }
     Value::SimpleString("NOK".to_string())
+}
+
+pub fn send_rdb_base64_to_hex(files_b64: &str) -> Value {
+    let hex_str = BASE64_STANDARD.decode(files_b64).unwrap();
+
+    Value::BulkStringFile(hex_str)
 }

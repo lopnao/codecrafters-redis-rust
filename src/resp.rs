@@ -2,35 +2,42 @@ use tokio::{net::TcpStream, io::{AsyncReadExt, AsyncWriteExt}};
 use bytes::BytesMut;
 use anyhow::Result;
 
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     SimpleString(String),
     NullBulkString(),
     BulkString(String),
+    BulkStringFile(Vec<u8>),
     ArrayBulkString(Vec<Value>),
     Array(Vec<Value>),
 
 }
 
 
+
+
+
 impl Value {
     pub fn serialize(self) -> String {
+    // pub fn serialize(self) -> String {
         match self {
             Value::SimpleString(s) => format!("+{}\r\n", s),
             Value::NullBulkString() => "$-1\r\n".to_string(),
             Value::BulkString(s) => format!("${}\r\n{}\r\n", s.chars().count(), s),
-            // Value::Array(a) => format!("${}\r\n{}\r\n", a[0].clone().serialize().chars().count(), a[0].clone().serialize()),
             Value::ArrayBulkString(a) => {
                 let a_final = a.iter().fold("".to_string(), |acc, s| format!("{}{}\r\n", acc, match s {
                     Value::SimpleString(s) => { s }
                     Value::NullBulkString() => { "" }
                     Value::BulkString(s) => { s }
                     Value::ArrayBulkString(_) => { "" }
+                    Value::BulkStringFile(_) => { "" }
                     Value::Array(_) => { "" }
                 }));
                 format!("${}\r\n{}\r\n", a_final.chars().count(), a_final)
             },
             Value::Array(a) => format!("{}", a.iter().fold(format!("*{}\r\n", a.len()), |acc, s| format!("{}{}", acc, s.clone().serialize()),)),
+            Value::BulkStringFile(_v)    => "".to_string(),
         }
 
 
@@ -38,6 +45,7 @@ impl Value {
 
             //_ => panic!("Unsupported value for serialize"),
     }
+
 }
 
 
@@ -66,7 +74,16 @@ impl RespHandler {
     }
 
     pub async fn write_value(&mut self, value: Value) -> Result<()> {
-        self.stream.write(value.serialize().as_bytes()).await?;
+        match value {
+            Value::BulkStringFile(mut v) => {
+                let mut enrobage = format!("${}\r\n", v.len()).as_bytes().to_vec();
+                enrobage.append(&mut v);
+                self.stream.write_all(enrobage.as_slice()).await?;
+            }
+            value   => {
+                self.stream.write_all(value.serialize().as_bytes()).await?;
+            }
+        }
 
         Ok(())
 
@@ -164,3 +181,7 @@ mod tests {
         assert_eq!(Value::Array(vec![Value::BulkString("PONG".to_string())]).serialize(), "*1\r\n$4\r\nPONG\r\n");
     }
 }
+
+
+//  $<length_of_file>\r\n<contents_of_file>
+//  $<length_of_file>\r\n\x55\x44
