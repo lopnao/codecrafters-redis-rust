@@ -115,10 +115,14 @@ impl KeyValueData {
 }
 
 pub fn key_expiry_thread(data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>, loop_every_in_ms: u64) {
-    let sleep_duration = Duration::from_millis(loop_every_in_ms);
+    let initial_duration = Duration::from_millis(loop_every_in_ms);
+    let mut sleep_duration = Duration::from_millis(loop_every_in_ms);
 
     loop {
         let now = Instant::now();
+        if sleep_duration != initial_duration {
+            sleep_duration = initial_duration;
+        }
 
         {
             let mut data2 = data1.lock().unwrap();
@@ -130,8 +134,16 @@ pub fn key_expiry_thread(data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_h
                     println!("Removing {:?} from data with expiring_time = {:?} // time now is {:?}", key, *instant, now);
                     data2.remove(key);
                     exp_heap2.pop();
-                } else { break; }
+
+                } else {
+                    let time_to_sleep = *instant - now;
+                    if time_to_sleep < sleep_duration {
+                        sleep_duration = time_to_sleep;
+                    }
+                    break;
+                }
             }
+
         }
 
         thread::sleep(sleep_duration);
