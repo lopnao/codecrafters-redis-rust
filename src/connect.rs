@@ -42,5 +42,5 @@ pub fn psync(args: Vec<Value>, server_info: Arc<Mutex<RedisServer>>) -> Value {
 pub fn send_rdb_base64_to_hex(files_b64: &str) -> Value {
     let hex_str = BASE64_STANDARD.decode(files_b64).unwrap();
 
-    Value::BulkStringFile(hex_str)
+    Value::BulkRawHexFile(hex_str)
 }

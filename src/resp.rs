@@ -8,7 +8,7 @@ pub enum Value {
     SimpleString(String),
     NullBulkString(),
     BulkString(String),
-    BulkStringFile(Vec<u8>),
+    BulkRawHexFile(Vec<u8>),
     ArrayBulkString(Vec<Value>),
     Array(Vec<Value>),
 
@@ -20,7 +20,6 @@ pub enum Value {
 
 impl Value {
     pub fn serialize(self) -> String {
-    // pub fn serialize(self) -> String {
         match self {
             Value::SimpleString(s) => format!("+{}\r\n", s),
             Value::NullBulkString() => "$-1\r\n".to_string(),
@@ -31,21 +30,15 @@ impl Value {
                     Value::NullBulkString() => { "" }
                     Value::BulkString(s) => { s }
                     Value::ArrayBulkString(_) => { "" }
-                    Value::BulkStringFile(_) => { "" }
+                    Value::BulkRawHexFile(_) => { "" }
                     Value::Array(_) => { "" }
                 }));
                 format!("${}\r\n{}\r\n", a_final.chars().count(), a_final)
             },
             Value::Array(a) => format!("{}", a.iter().fold(format!("*{}\r\n", a.len()), |acc, s| format!("{}{}", acc, s.clone().serialize()),)),
-            Value::BulkStringFile(_v)    => "".to_string(),
+            Value::BulkRawHexFile(_v)    => "".to_string(),
         }
-
-
-            // Value::Array(a) => format!("{}\r\n", a.iter().fold(format!("*{}\r\n", a.len()), |acc, s| format!("{}{}", acc, s.clone().serialize()),)),
-
-            //_ => panic!("Unsupported value for serialize"),
     }
-
 }
 
 
@@ -75,7 +68,7 @@ impl RespHandler {
 
     pub async fn write_value(&mut self, value: Value) -> Result<()> {
         match value {
-            Value::BulkStringFile(mut v) => {
+            Value::BulkRawHexFile(mut v) => {
                 let mut enrobage = format!("${}\r\n", v.len()).as_bytes().to_vec();
                 enrobage.append(&mut v);
                 self.stream.write_all(enrobage.as_slice()).await?;
