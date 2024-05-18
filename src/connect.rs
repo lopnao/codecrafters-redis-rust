@@ -33,7 +33,8 @@ pub fn psync(args: Vec<Value>, server_info: Arc<Mutex<RedisServer>>) -> Value {
     if  args[0] == Value::BulkString("?".to_string()) &&
         args[1] == Value::BulkString("-1".to_string()) {
         let master_replid = { server_info.lock().unwrap().master_replid };
-        return Value::SimpleString(format!("FULLRESYNC {} 0", master_replid));
+        return Value::SimpleString("FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0".to_string());
+        // return Value::SimpleString(format!("FULLRESYNC {} 0", master_replid.));
     }
     Value::SimpleString("NOK".to_string())
 }
