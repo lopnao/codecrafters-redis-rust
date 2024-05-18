@@ -26,6 +26,7 @@ tokio = { version = "1.23.0", features = ["full"] }
 clap = { version = "4.5.4", features = ["derive"] } # async networking
 nanoid = "0.4.0"
 rand = "0.8.5"
+base64 = "0.22.1"
 
 
 

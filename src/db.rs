@@ -138,7 +138,6 @@ pub fn key_expiry_thread(data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_h
 
                 } else {
                     let time_to_sleep = *instant - now;
-                    println!("Detected time_to_sleep = {:?}", time_to_sleep.as_millis());
                     if time_to_sleep < sleep_duration {
                         sleep_duration = time_to_sleep;
                     }
@@ -147,7 +146,6 @@ pub fn key_expiry_thread(data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_h
             }
 
         }
-        println!("sleep_duration = {:?}", sleep_duration.as_millis());
         thread::sleep(sleep_duration);
     }
 }

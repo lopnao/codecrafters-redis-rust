@@ -12,7 +12,7 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 use thiserror::Error;
 use db::KeyValueData;
-use crate::connect::{configure_replica, connect_to_master, psync};
+use crate::connect::{configure_replica, connect_to_master, psync, send_rdb_base64_to_hex};
 use crate::db::{data_get, data_set, key_expiry_thread, server_info};
 
 mod resp;
@@ -235,9 +235,12 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     configure_replica(args)
                 },
                 "psync" => {
-                    psync(args, server_info_clone.clone())
+                    handler.write_value(psync(args, server_info_clone.clone())).await.unwrap();
+                    let empty_base64_string = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
+                    send_rdb_base64_to_hex(empty_base64_string)
                 },
                 c => panic!("Cannot handle command {}", c),
+
             }
         } else {
             break;
@@ -246,6 +249,7 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
         println!("Serialized = {:?}", response.clone().serialize());
 
         handler.write_value(response).await.unwrap();
+
 
     }
 }
@@ -329,6 +333,9 @@ fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
         }
         Value::NullBulkString() => {
             Err(anyhow::anyhow!("NullBulkString value response is todo!"))
+        }
+        Value::BulkStringFile(_s) => {
+            Err(anyhow::anyhow!("BulkStringFile value response is todo!"))
         }
         Value::Array(a) => {
             Ok((unpack_bulk_str(a[0].clone())?, a[1..].to_vec()))
