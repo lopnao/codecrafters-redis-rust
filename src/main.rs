@@ -9,10 +9,10 @@ use anyhow::Result;
 use tokio::time::Instant;
 use clap::Parser;
 use nanoid::nanoid;
-use uuid::Uuid;
+use uuid::{Uuid, uuid};
 use thiserror::Error;
 use db::KeyValueData;
-use crate::connect::{configure_replica, connect_to_master};
+use crate::connect::{configure_replica, connect_to_master, psync};
 use crate::db::{data_get, data_set, key_expiry_thread, server_info};
 
 mod resp;
@@ -104,6 +104,10 @@ impl RedisServer {
         })
     }
 
+    fn change_replid(&mut self, new_replid: Uuid) {
+        self.master_replid = new_replid;
+    }
+
 }
 
 #[derive(Parser, Debug)]
@@ -117,7 +121,7 @@ struct Args {
 #[tokio::main]
 async fn main() {
     let server_info = match RedisServer::init() {
-        Ok(s) => Arc::new(s),
+        Ok(s) => Arc::new(Mutex::new(s)),
         Err(e) => {
             println!("Unable to initialize Redis server: {e}");
             return;
@@ -126,7 +130,10 @@ async fn main() {
 
 
 
-    let addr = format!("0.0.0.0:{}", server_info.self_port.to_string());
+    let addr = {
+        let temp_port = server_info.lock().unwrap().self_port.to_string();
+        format!("0.0.0.0:{}", temp_port)
+    };
 
     // let args = Args::parse();
     println!("Listening on address {addr}");
@@ -139,8 +146,14 @@ async fn main() {
     let exp_clean = Arc::clone(&exp_heap);
     let _ = thread::spawn(move || key_expiry_thread(data_clean, exp_clean, EXPIRY_LOOP_TIME));
 
-    if !server_info.is_master {
-        let mut stream_to_master = connect_to_master(server_info.master_host.clone(), server_info.master_port.clone()).await;
+    let is_slave = {
+        !server_info.lock().unwrap().is_master
+    };
+
+    if is_slave {
+        let master_host = { server_info.lock().unwrap().master_host.clone() };
+        let master_port = { server_info.lock().unwrap().master_port.clone() };
+        let mut stream_to_master = connect_to_master(master_host, master_port).await;
 
         match stream_to_master {
             Ok(stream_to_master) => {
@@ -185,7 +198,7 @@ async fn main() {
 //     port: u16,
 // }
 
-async fn handle_conn(stream: TcpStream, server_info_clone: Arc<RedisServer>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
+async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer>>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
     let mut handler = resp::RespHandler::new(stream);
     println!("Starting read loop");
 
@@ -214,6 +227,9 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<RedisServer>, dat
                 "replconf" => {
                     configure_replica(args)
                 },
+                "psync" => {
+                    psync(args, server_info_clone.clone())
+                },
                 c => panic!("Cannot handle command {}", c),
             }
         } else {
@@ -227,7 +243,8 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<RedisServer>, dat
     }
 }
 
-async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: Arc<RedisServer>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
+async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: Arc<Mutex<RedisServer>>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
+    let self_port = { server_info_clone.lock().unwrap().self_port.clone() };
     let mut handler = resp::RespHandler::new(stream_to_master);
     println!("Connection to master handled, trying to send HandShake.");
     let mut handshake = Value::Array(vec![Value::BulkString("PING".to_string())]);
@@ -238,7 +255,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
             let cmd = vec![
                 Value::BulkString("REPLCONF".to_string()),
                 Value::BulkString("listening-port".to_string()),
-                Value::BulkString(format!("{}", server_info_clone.self_port)),
+                Value::BulkString(format!("{}", self_port)),
             ];
             handshake = Value::Array(cmd);
             handler.write_value(handshake).await.unwrap();
@@ -256,8 +273,34 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
     }
     let value = handler.read_value().await.unwrap();
     if value == Some(Value::SimpleString("OK".to_string())) {
-        println!("HANDSHAKE IS GOOD SO FAR!")
+        let cmd = vec![
+            Value::BulkString("PSYNC".to_string()),
+            Value::BulkString("?".to_string()),
+            Value::BulkString("-1".to_string()),
+        ];
+        handshake = Value::Array(cmd);
+        handler.write_value(handshake).await.unwrap();
     }
+    if let Some(value) = handler.read_value().await.unwrap() {
+        let (command, args) = extract_command(value).unwrap();
+        match command.to_ascii_lowercase().as_str() {
+            "fullresync"      => {
+                if let Value::SimpleString(s) = args[0].clone() {
+                    if let Ok(new_uuid) = Uuid::parse_str(&s) {
+                        {
+                            let _temp = server_info_clone.lock().unwrap().change_replid(new_uuid);
+                            println!("Changed internal master_id to : {}", s);
+                        };
+                    }
+                }
+
+            },
+            c     => panic!("Cannot handle command {} during handshake", c),
+        }
+    }
+
+
+
 
     loop {
         let value = handler.read_value().await.unwrap();
@@ -269,8 +312,11 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
 
 fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
     match value {
-        Value::SimpleString(_s) => {
-            Err(anyhow::anyhow!("SimpleString value response is todo!"))
+        Value::SimpleString(s) => {
+            let v: Vec<&str> = s.split_whitespace().collect();
+            let cmd = v[0].clone();
+            let args: Vec<Value> = v.iter().skip(1).map(|s| Value::SimpleString(format!("{}", s))).collect();
+            Ok((cmd.to_string(), args))
         }
         Value::BulkString(_s) => {
             Err(anyhow::anyhow!("BulkString value response is todo!"))

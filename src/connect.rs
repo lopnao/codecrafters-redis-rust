@@ -1,6 +1,7 @@
+use std::sync::{Arc, Mutex};
 use tokio::net::TcpStream;
 use crate::resp::Value;
-use crate::{SlaveError, unpack_bulk_str};
+use crate::{RedisServer, SlaveError, unpack_bulk_str};
 use crate::SlaveError::NoHost;
 
 pub async fn connect_to_master(master_host: Option<String>, master_port: Option<u16>) -> Result<TcpStream, SlaveError> {
@@ -24,6 +25,15 @@ pub fn configure_replica(args: Vec<Value>) -> Value {
     } else if   args[0] == Value::BulkString("capa".to_string()) &&
                 args[1] == Value::BulkString("psync2".to_string()) {
         return Value::SimpleString("OK".to_string());
+    }
+    Value::SimpleString("NOK".to_string())
+}
+
+pub fn psync(args: Vec<Value>, server_info: Arc<Mutex<RedisServer>>) -> Value {
+    if  args[0] == Value::BulkString("?".to_string()) &&
+        args[1] == Value::BulkString("-1".to_string()) {
+        let master_replid = { server_info.lock().unwrap().master_replid };
+        return Value::SimpleString(format!("FULLRESYNC {} 0", master_replid));
     }
     Value::SimpleString("NOK".to_string())
 }
