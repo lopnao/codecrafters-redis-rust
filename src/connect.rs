@@ -10,7 +10,7 @@ pub async fn connect_to_master(master_host: Option<String>, master_port: Option<
     if !master_port.is_none() {
         port = master_port.unwrap();
     }
-    let mut stream = TcpStream::connect(format!("{}:{}", master_host.unwrap(), port)).await?;
+    let stream = TcpStream::connect(format!("{}:{}", master_host.unwrap(), port)).await?;
 
     Ok(stream)
 }

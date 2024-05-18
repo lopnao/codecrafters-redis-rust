@@ -1,6 +1,5 @@
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
-use std::fmt::Error;
 use std::sync::{Arc, Mutex};
 use std::{io, thread};
 use resp::Value;
@@ -11,7 +10,6 @@ use clap::Parser;
 use nanoid::nanoid;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-use uuid::{Uuid, uuid};
 use thiserror::Error;
 use db::KeyValueData;
 use crate::connect::{configure_replica, connect_to_master, psync};
@@ -162,7 +160,7 @@ async fn main() {
     if is_slave {
         let master_host = { server_info.lock().unwrap().master_host.clone() };
         let master_port = { server_info.lock().unwrap().master_port.clone() };
-        let mut stream_to_master = connect_to_master(master_host, master_port).await;
+        let stream_to_master = connect_to_master(master_host, master_port).await;
 
         match stream_to_master {
             Ok(stream_to_master) => {
@@ -252,6 +250,7 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
     }
 }
 
+#[allow(unused_variables)]
 async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: Arc<Mutex<RedisServer>>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
     let self_port = { server_info_clone.lock().unwrap().self_port.clone() };
     let mut handler = resp::RespHandler::new(stream_to_master);
@@ -311,7 +310,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
 
     loop {
         let value = handler.read_value().await.unwrap();
-        println!("Got value {:?}", value);
+        println!("Got value ICI {:?}", value);
     }
 
 }
@@ -321,7 +320,7 @@ fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
     match value {
         Value::SimpleString(s) => {
             let v: Vec<&str> = s.split_whitespace().collect();
-            let cmd = v[0].clone();
+            let cmd = v[0];
             let args: Vec<Value> = v.iter().skip(1).map(|s| Value::SimpleString(format!("{}", s))).collect();
             Ok((cmd.to_string(), args))
         }
@@ -347,6 +346,7 @@ fn unpack_bulk_str(value: Value) -> Result<String> {
     }
 }
 
+#[allow(dead_code)]
 fn unpack_array(value: Value) -> Result<Vec<Value>> {
     match value {
         Value::Array(a) => Ok(a),
@@ -354,6 +354,7 @@ fn unpack_array(value: Value) -> Result<Vec<Value>> {
     }
 }
 
+#[allow(dead_code)]
 fn unpack_simple_str(value: Value) -> Result<String> {
     match value {
         Value::SimpleString(s) => Ok(s),
