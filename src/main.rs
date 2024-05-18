@@ -308,10 +308,10 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
 
 
 
-    loop {
-        let value = handler.read_value().await.unwrap();
-        println!("Got value ICI {:?}", value);
-    }
+    // loop {
+    //     let value = handler.read_value().await.unwrap();
+    //     println!("Got value ICI {:?}", value);
+    // }
 
 }
 
