@@ -56,7 +56,7 @@ pub fn server_info(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>)
                     let connected_slaves = { server_info_clone.lock().unwrap().connected_slaves };
                     res.push(Value::BulkString(format!("connected_slaves:{}", connected_slaves)));
                 }
-                let master_replid = { server_info_clone.lock().unwrap().master_replid };
+                let master_replid = { server_info_clone.lock().unwrap().master_replid.clone() };
                 let master_repl_offset = { server_info_clone.lock().unwrap().master_repl_offset };
                 let master_nanoid = { server_info_clone.lock().unwrap().master_nanoid.clone() };
                 res.push(Value::BulkString(format!("master_replid:{}", master_replid)));

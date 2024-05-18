@@ -318,6 +318,7 @@ dependencies = [
  "bytes",
  "clap",
  "nanoid",
+ "rand",
  "thiserror",
  "tokio",
  "uuid",
