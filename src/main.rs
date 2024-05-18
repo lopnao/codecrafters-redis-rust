@@ -334,7 +334,7 @@ fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
         Value::NullBulkString() => {
             Err(anyhow::anyhow!("NullBulkString value response is todo!"))
         }
-        Value::BulkStringFile(_s) => {
+        Value::BulkRawHexFile(_s) => {
             Err(anyhow::anyhow!("BulkStringFile value response is todo!"))
         }
         Value::Array(a) => {
