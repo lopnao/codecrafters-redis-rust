@@ -20,7 +20,7 @@ mod db;
 mod structs;
 mod connect;
 
-const EXPIRY_LOOP_TIME: u64 = 1; // 1 milli seconds
+const EXPIRY_LOOP_TIME: u64 = 50; // 50 milli seconds
 
 #[derive(Error, Debug)]
 pub enum ServerError {
