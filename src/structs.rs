@@ -1,32 +1,29 @@
-// use std::fmt::{Display, Formatter};
-// use crate::structs::ServerRole::Master;
+use crate::resp::Value;
 
-// #[derive(Debug, Copy, Clone)]
-// pub enum ServerRole {
-//     Master,
-//     _Slave
-// }
-//
-// impl Display for ServerRole {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-//         f.write_fmt(format_args!(
-//             "{}", match self {
-//                 ServerRole::Master => { "master" },
-//                 ServerRole::_Slave => { "slave" },
-//             },
-//         ))
-//     }
-// }
-//
-// #[derive(Debug, Copy, Clone)]
-// pub struct RedisRuntime {
-//     pub replication_role: ServerRole,
-// }
-//
-// impl RedisRuntime {
-//     pub fn new() -> Self {
-//         Self {
-//             replication_role: Master,
-//         }
-//     }
-// }
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub struct ChannelCommand {
+    command: CCommand,
+    args: Option<Value>,
+
+}
+
+#[allow(dead_code)]
+impl ChannelCommand {
+    pub fn new(command: CCommand, args: Option<Value>) -> Self {
+        Self {
+            command,
+            args
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Copy, Clone, Debug)]
+pub enum CCommand {
+    AddReplica,
+    DelReplica,
+    Ack,
+    Info,
+
+}
