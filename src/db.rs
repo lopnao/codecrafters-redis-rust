@@ -58,7 +58,7 @@ pub fn server_info(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>)
                 }
                 let master_replid = { server_info_clone.lock().unwrap().master_replid.clone() };
                 let master_repl_offset = { server_info_clone.lock().unwrap().master_repl_offset };
-                let master_nanoid = { server_info_clone.lock().unwrap().master_nanoid.clone() };
+                let master_nanoid = { server_info_clone.lock().unwrap().self_nanoid.clone() };
                 res.push(Value::BulkString(format!("master_replid:{}", master_replid)));
                 res.push(Value::BulkString(format!("master_repl_offset:{}", master_repl_offset)));
                 res.push(Value::BulkString(format!("master_nanoid:{}", master_nanoid)));

@@ -60,10 +60,10 @@ struct RedisServer {
     pub connected_slaves: u32,
     pub master_replid: String,
     pub master_repl_offset: u32,
-    pub master_nanoid: String,
     pub master_host: Option<String>,
     pub master_port: Option<u16>,
     pub self_port: u16,
+    pub self_nanoid: String,
 }
 
 impl RedisServer {
@@ -105,10 +105,10 @@ impl RedisServer {
             connected_slaves: 0,
             master_replid: replid,
             master_repl_offset: 0,
-            master_nanoid: nanoid!(),
             master_host,
             master_port,
             self_port,
+            self_nanoid: nanoid!(),
         })
     }
 
