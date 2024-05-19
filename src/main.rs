@@ -11,6 +11,8 @@ use nanoid::nanoid;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use thiserror::Error;
+use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc::{Receiver, Sender};
 use db::KeyValueData;
 use crate::connect::{configure_replica, connect_to_master, psync, send_rdb_base64_to_hex};
 use crate::db::{data_get, data_set, key_expiry_thread, server_info};
@@ -135,8 +137,9 @@ async fn main() {
             return;
         }
     };
-
-
+    let (broadcast_sender, broadcast_receiver) = tokio::sync::broadcast::channel::<Value>(50);
+    // let (master_tx, slave_rx) = mpsc::channel::<Value>(50);
+    let (slave_tx, master_rx) = mpsc::channel::<Value>(50);
 
     let addr = {
         let temp_port = server_info.lock().unwrap().self_port.to_string();
@@ -176,6 +179,14 @@ async fn main() {
         }
     }
 
+    // Spawning a thread on master node to propagate Values to replica servers
+    if !is_slave {
+
+        tokio::spawn(async move {
+            propagate_to_replicas(master_rx, broadcast_sender).await
+        });
+
+    }
 
 
 
@@ -184,11 +195,14 @@ async fn main() {
         match stream {
             Ok((stream, _)) => {
                 println!("accepted new connection");
+                let slave_tx_clone = slave_tx.clone();
+                let mut broadcast_receiver_subscribed = broadcast_receiver.resubscribe();
+                // let mut broadcast_receiver_subscribed = broadcast_sender.subscribe();
                 let data1 = Arc::clone(&data);
                 let exp_heap1 = Arc::clone(&exp_heap);
                 let server_info_clone = server_info.clone();
                 tokio::spawn(async move {
-                    handle_conn(stream, server_info_clone, data1, exp_heap1).await
+                    handle_conn(stream, server_info_clone, data1, exp_heap1, slave_tx_clone, broadcast_receiver_subscribed).await
                 });
             }
             Err(e) => {
@@ -199,10 +213,23 @@ async fn main() {
     }
 }
 
+async fn propagate_to_replicas(mut master_receiver: Receiver<Value>, broadcast_sender: broadcast::Sender<Value>) {
+    loop {
+
+        while let Some(value_to_propagate) = master_receiver.recv().await {
+            println!("Propagating : Value = {:?}", value_to_propagate.clone());
+            broadcast_sender.send(value_to_propagate).unwrap();
+        }
+
+    }
+}
+
 async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer>>,
                      data1: Arc<Mutex<HashMap<String, KeyValueData>>>,
-                     exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
+                     exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>,
+                     slave_tx: Sender<Value>, mut broadcast_receiver: broadcast::Receiver<Value>) {
     let mut handler = resp::RespHandler::new(stream);
+    let mut to_replicate = false;
     println!("Starting read loop");
 
     loop {
@@ -210,11 +237,13 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
         println!("Got value {:?}", value);
 
         let response = if let Some(v) = value {
+            let value_to_propagate = v.clone();
             let (command, args) = extract_command(v).unwrap();
             match command.to_ascii_lowercase().as_str() {
                 "ping"  => Value::SimpleString("PONG".to_string()),
                 "echo"  => args.first().unwrap().clone(),
                 "set"   => {
+                    slave_tx.send(value_to_propagate).await.unwrap();
                     let data2 = Arc::clone(&data1);
                     let exp_heap2 = Arc::clone(&exp_heap1);
                     data_set(args, data2, exp_heap2)
@@ -232,7 +261,12 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                 },
                 "psync" => {
                     handler.write_value(psync(args, server_info_clone.clone())).await.unwrap();
-                    send_rdb_base64_to_hex(EMPTY_RDB_FILE)
+                    // Sending RDB File
+                    println!("[INFO] - Sending RDB File to Replica");
+                    handler.write_value(send_rdb_base64_to_hex(EMPTY_RDB_FILE)).await.unwrap();
+                    to_replicate = true;
+                    println!("to_replicate = {:?}", to_replicate);
+                    Value::SimpleString("OK".to_string())
                 },
                 c => panic!("Cannot handle command {}", c),
 
@@ -240,13 +274,24 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
         } else {
             break;
         };
-        println!("Sending value {:?}", response);
-        println!("Serialized = {:?}", response.clone().serialize());
+        if to_replicate {
+            println!("LAAAAAAAA");
+            break;
+        } else {
+            println!("Sending value {:?}", response);
+            println!("Serialized = {:?}", response.clone().serialize());
 
-        handler.write_value(response).await.unwrap();
-
-
+            handler.write_value(response).await.unwrap();
+        }
     }
+
+    // Propagate to Replica :
+    loop {
+        while let Ok(v) = broadcast_receiver.recv().await {
+            handler.write_value(v).await.unwrap();
+        }
+    }
+
 }
 
 #[allow(unused_variables)]
@@ -316,7 +361,10 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
 
     loop {
         let value = handler.read_value(None).await.unwrap();
-        println!("Got value ICI {:?}", value);
+        if let Some(v) = value {
+            println!("Got value ICI {:?}", v);
+        }
+
     }
 
 }
