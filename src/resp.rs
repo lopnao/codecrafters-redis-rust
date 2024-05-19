@@ -36,6 +36,30 @@ impl Value {
             Value::BulkRawHexFile(_v)    => "".to_string(),
         }
     }
+
+    pub fn deserialize_bulkstring(self) -> Value {
+        match self {
+            Value::BulkString(s) => {
+                let s = s.as_bytes();
+                let mut vec_value = vec![];
+                let mut ind = 0;
+                while let Some((a, i)) = read_until_dollar_or_end_with_ind(s, ind) {
+                    ind = i;
+                    if let Ok((d, _)) = parse_bulk_string(BytesMut::from(a)) {
+                        vec_value.push(d);
+                    }
+                }
+
+                Value::Array(vec_value)
+            },
+            Value::ArrayBulkString(v) => Value::Array(v),
+            v           => {
+                println!("ICI v est: {:?}", v);
+                panic!("Need to be a BulkString to call unserialize_bulkstring !")
+            },
+        }
+    }
+
 }
 
 
@@ -75,10 +99,10 @@ impl RespHandler {
             Value::BulkRawHexFile(mut v) => {
                 let mut enrobage = format!("${}\r\n", v.len()).as_bytes().to_vec();
                 enrobage.append(&mut v);
-                self.stream.write_all(enrobage.as_slice()).await?;
+                self.stream.write(enrobage.as_slice()).await?;
             }
             value   => {
-                self.stream.write_all(value.serialize().as_bytes()).await?;
+                self.stream.write(value.serialize().as_bytes()).await?;
             }
         }
 
@@ -182,6 +206,19 @@ fn read_until_crlf(buffer: &[u8]) -> Option<(&[u8], usize)> {
     None
 }
 
+fn read_until_dollar_or_end_with_ind(buffer: &[u8], ind: usize) -> Option<(&[u8], usize)> {
+    for i in ind..(buffer.len() - 1) {
+        if buffer[i + 1] == b'$' {
+            return Some((&buffer[ind..=i], i + 1));
+        }
+    }
+    if ind < buffer.len() - 2 {
+        return Some((&buffer[ind..], buffer.len()));
+    }
+
+    None
+}
+
 fn parse_int(buffer: &[u8]) -> Result<i64> {
     Ok(String::from_utf8(buffer.to_vec())?.parse::<i64>()?)
 }
@@ -195,6 +232,22 @@ mod tests {
         assert_eq!(Value::SimpleString("PONG".to_string()).serialize(), "+PONG\r\n");
         assert_eq!(Value::BulkString("PONG".to_string()).serialize(), "$4\r\nPONG\r\n");
         assert_eq!(Value::Array(vec![Value::BulkString("PONG".to_string())]).serialize(), "*1\r\n$4\r\nPONG\r\n");
+    }
+
+    #[test]
+    fn test_parse_bulkstring() {
+        assert_eq!(Value::BulkString("$3\r\nSET\r\n$5\r\napple\r\n$4\r\ntree\r\n$2\r\npx\r\n$4\r\n1000\r\n".to_string()).deserialize_bulkstring(),
+                   Value::Array(vec![Value::BulkString("SET".to_string()),
+                       Value::BulkString("apple".to_string()), Value::BulkString("tree".to_string()),
+                       Value::BulkString("px".to_string()), Value::BulkString("1000".to_string())]));
+        assert_eq!(Value::BulkString("$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n".to_string()).deserialize_bulkstring(),
+                   Value::Array(vec![Value::BulkString("SET".to_string()),
+                                     Value::BulkString("foo".to_string()),
+                                     Value::BulkString("bar".to_string())]));
+        assert_eq!(Value::Array(vec![Value::BulkString("SET".to_string()),
+                                               Value::BulkString("foo".to_string()),
+                                               Value::BulkString("bar".to_string())]).serialize(),
+                   "*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n".to_string());
     }
 }
 

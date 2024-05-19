@@ -196,7 +196,7 @@ async fn main() {
             Ok((stream, _)) => {
                 println!("accepted new connection");
                 let slave_tx_clone = slave_tx.clone();
-                let mut broadcast_receiver_subscribed = broadcast_receiver.resubscribe();
+                let broadcast_receiver_subscribed = broadcast_receiver.resubscribe();
                 // let mut broadcast_receiver_subscribed = broadcast_sender.subscribe();
                 let data1 = Arc::clone(&data);
                 let exp_heap1 = Arc::clone(&exp_heap);
@@ -288,7 +288,11 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
     // Propagate to Replica :
     loop {
         while let Ok(v) = broadcast_receiver.recv().await {
-            handler.write_value(v).await.unwrap();
+            println!("v = {:?}", v);
+            let new_v = v.deserialize_bulkstring();
+            println!("Sending : new_v = {:?}", new_v);
+            handler.write_value(new_v).await.unwrap();
+
         }
     }
 
