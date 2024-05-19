@@ -76,22 +76,25 @@ impl RespHandler {
         }
     }
 
-    pub async fn read_value(&mut self, is_hex: Option<bool>) -> Result<Option<Value>> {
-        let is_hex = is_hex.unwrap_or(false);
+    pub async fn read_value(&mut self) -> Result<Option<Value>> {
+        let bytes_read = self.stream.read_buf(&mut self.buffer).await?;
+        if bytes_read == 0 {
+            return Ok(None);
+        }
+        let (v, _) = parse_message(self.buffer.split())?;
+
+        Ok(Some(v))
+    }
+
+    pub async fn read_hex(&mut self) -> Result<Option<Value>> {
         let bytes_read = self.stream.read_buf(&mut self.buffer).await?;
         if bytes_read == 0 {
             return Ok(None);
         }
         // Added to process RDB File HexDump Transfer
-        if is_hex {
-            let (v, _) = parse_hexdump(self.buffer.split())?;
-            return Ok(Some(v));
-        }
-        let (v, _) = parse_message(self.buffer.split())?;
-
+        let (v, _) = parse_hexdump(self.buffer.split())?;
 
         Ok(Some(v))
-
     }
 
     pub async fn write_value(&mut self, value: Value) -> Result<()> {
