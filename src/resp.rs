@@ -27,11 +27,8 @@ impl Value {
             Value::ArrayBulkString(a) => {
                 let a_final = a.iter().fold("".to_string(), |acc, s| format!("{}{}\r\n", acc, match s {
                     Value::SimpleString(s) => { s }
-                    Value::NullBulkString() => { "" }
                     Value::BulkString(s) => { s }
-                    Value::ArrayBulkString(_) => { "" }
-                    Value::BulkRawHexFile(_) => { "" }
-                    Value::Array(_) => { "" }
+                    _ => { "" }
                 }));
                 format!("${}\r\n{}\r\n", a_final.chars().count(), a_final)
             },
@@ -55,12 +52,19 @@ impl RespHandler {
         }
     }
 
-    pub async fn read_value(&mut self) -> Result<Option<Value>> {
+    pub async fn read_value(&mut self, is_hex: Option<bool>) -> Result<Option<Value>> {
+        let is_hex = is_hex.unwrap_or(false);
         let bytes_read = self.stream.read_buf(&mut self.buffer).await?;
         if bytes_read == 0 {
             return Ok(None);
         }
+        // Added to process RDB File HexDump Transfer
+        if is_hex {
+            let (v, _) = parse_hexdump(self.buffer.split())?;
+            return Ok(Some(v));
+        }
         let (v, _) = parse_message(self.buffer.split())?;
+
 
         Ok(Some(v))
 
@@ -91,6 +95,15 @@ fn parse_message(buffer: BytesMut) -> Result<(Value, usize)> {
         '+' => parse_simple_string(buffer),
         '*' => parse_array(buffer),
         '$' => parse_bulk_string(buffer),
+        _ => Err(anyhow::anyhow!("Not a known value type {:?}", buffer)),
+    }
+}
+
+fn parse_hexdump(buffer: BytesMut) -> Result<(Value, usize)> {
+
+    println!("TEMP buffer = {:?}", buffer);
+    match buffer[0] as char {
+        '$' => parse_bulk_hex(buffer),
         _ => Err(anyhow::anyhow!("Not a known value type {:?}", buffer)),
     }
 }
@@ -134,19 +147,29 @@ fn parse_array(buffer: BytesMut) -> Result<(Value, usize)> {
 }
 
 fn parse_bulk_string(buffer: BytesMut) -> Result<(Value, usize)> {
-
     let (bulk_str_len, bytes_consumed) = if let Some((line, len)) = read_until_crlf(&buffer[1..]) {
         let bulk_str_len = parse_int(line)?;
         (bulk_str_len, len + 1)
-
     } else {
         return Err(anyhow::anyhow!("Invalid bulk string format {:?}", buffer));
     };
-
     let end_of_bulk_str = bytes_consumed + bulk_str_len as usize;
     let total_parsed = end_of_bulk_str + 2;
 
     Ok((Value::BulkString(String::from_utf8(buffer[bytes_consumed..end_of_bulk_str].to_vec())?), total_parsed))
+}
+
+fn parse_bulk_hex(buffer: BytesMut) -> Result<(Value, usize)> {
+    let (bulk_hex_len, bytes_consumed) = if let Some((line, len)) = read_until_crlf(&buffer[1..]) {
+        let bulk_hex_len = parse_int(line)?;
+        (bulk_hex_len, len + 1)
+    } else {
+        return Err(anyhow::anyhow!("Invalid bulk hex format {:?}", buffer));
+    };
+    let end_of_bulk_hex = bytes_consumed + bulk_hex_len as usize;
+    let total_parsed = end_of_bulk_hex + 2;
+
+    Ok((Value::BulkRawHexFile(buffer[bytes_consumed..end_of_bulk_hex].to_vec()), total_parsed))
 }
 
 fn read_until_crlf(buffer: &[u8]) -> Option<(&[u8], usize)> {

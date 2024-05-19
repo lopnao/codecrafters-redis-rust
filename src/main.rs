@@ -21,6 +21,7 @@ mod structs;
 mod connect;
 
 const EXPIRY_LOOP_TIME: u64 = 50; // 50 milli seconds
+const EMPTY_RDB_FILE: &str = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
 
 #[derive(Error, Debug)]
 pub enum ServerError {
@@ -151,7 +152,7 @@ async fn main() {
 
     let data_clean = Arc::clone(&data);
     let exp_clean = Arc::clone(&exp_heap);
-    let _ = thread::spawn(move || key_expiry_thread(data_clean, exp_clean, EXPIRY_LOOP_TIME));
+    let _cleaning_thread = thread::spawn(move || key_expiry_thread(data_clean, exp_clean, EXPIRY_LOOP_TIME));
 
     let is_slave = {
         !server_info.lock().unwrap().is_master
@@ -198,19 +199,14 @@ async fn main() {
     }
 }
 
-// #[derive(Debug, Default, Parser)]
-// #[command(author, version, about, long_about = None)]
-// struct Args {
-//     #[clap(default_value_t=DEFAULT_LISTENING_PORT, short, long)]
-//     port: u16,
-// }
-
-async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer>>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
+async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer>>,
+                     data1: Arc<Mutex<HashMap<String, KeyValueData>>>,
+                     exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
     let mut handler = resp::RespHandler::new(stream);
     println!("Starting read loop");
 
     loop {
-        let value = handler.read_value().await.unwrap();
+        let value = handler.read_value(None).await.unwrap();
         println!("Got value {:?}", value);
 
         let response = if let Some(v) = value {
@@ -236,8 +232,7 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                 },
                 "psync" => {
                     handler.write_value(psync(args, server_info_clone.clone())).await.unwrap();
-                    let empty_base64_string = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
-                    send_rdb_base64_to_hex(empty_base64_string)
+                    send_rdb_base64_to_hex(EMPTY_RDB_FILE)
                 },
                 c => panic!("Cannot handle command {}", c),
 
@@ -255,13 +250,15 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
 }
 
 #[allow(unused_variables)]
-async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: Arc<Mutex<RedisServer>>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
+async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: Arc<Mutex<RedisServer>>,
+                               data1: Arc<Mutex<HashMap<String, KeyValueData>>>,
+                               exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
     let self_port = { server_info_clone.lock().unwrap().self_port.clone() };
     let mut handler = resp::RespHandler::new(stream_to_master);
     println!("Connection to master handled, trying to send HandShake.");
     let mut handshake = Value::Array(vec![Value::BulkString("PING".to_string())]);
     handler.write_value(handshake).await.unwrap();
-    let value = handler.read_value().await.unwrap();
+    let value = handler.read_value(None).await.unwrap();
     if let Some(value) = value {
         if value == Value::SimpleString("PONG".to_string()) {
             let cmd = vec![
@@ -273,7 +270,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
             handler.write_value(handshake).await.unwrap();
         }
     }
-    let value = handler.read_value().await.unwrap();
+    let value = handler.read_value(None).await.unwrap();
     if value == Some(Value::SimpleString("OK".to_string())) {
         let cmd = vec![
             Value::BulkString("REPLCONF".to_string()),
@@ -283,7 +280,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
         handshake = Value::Array(cmd);
         handler.write_value(handshake).await.unwrap();
     }
-    let value = handler.read_value().await.unwrap();
+    let value = handler.read_value(None).await.unwrap();
     if value == Some(Value::SimpleString("OK".to_string())) {
         let cmd = vec![
             Value::BulkString("PSYNC".to_string()),
@@ -293,7 +290,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
         handshake = Value::Array(cmd);
         handler.write_value(handshake).await.unwrap();
     }
-    if let Some(value) = handler.read_value().await.unwrap() {
+    if let Some(value) = handler.read_value(None).await.unwrap() {
         let (command, args) = extract_command(value).unwrap();
         match command.to_ascii_lowercase().as_str() {
             "fullresync"      => {
@@ -309,13 +306,18 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
         }
     }
 
+    if let Some(value) = handler.read_value(Some(true)).await.unwrap() {
+        // Process le transfert du RDB file ..
+
+    }
 
 
 
-    // loop {
-    //     let value = handler.read_value().await.unwrap();
-    //     println!("Got value ICI {:?}", value);
-    // }
+
+    loop {
+        let value = handler.read_value(None).await.unwrap();
+        println!("Got value ICI {:?}", value);
+    }
 
 }
 
