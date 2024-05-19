@@ -233,7 +233,7 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
     println!("Starting read loop");
 
     loop {
-        let value = handler.read_value(None).await.unwrap();
+        let value = handler.read_value().await.unwrap();
         println!("Got value {:?}", value);
 
         let response = if let Some(v) = value {
@@ -265,7 +265,6 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     println!("[INFO] - Sending RDB File to Replica");
                     handler.write_value(send_rdb_base64_to_hex(EMPTY_RDB_FILE)).await.unwrap();
                     to_replicate = true;
-                    println!("to_replicate = {:?}", to_replicate);
                     Value::SimpleString("OK".to_string())
                 },
                 c => panic!("Cannot handle command {}", c),
@@ -275,7 +274,6 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
             break;
         };
         if to_replicate {
-            println!("LAAAAAAAA");
             break;
         } else {
             println!("Sending value {:?}", response);
@@ -288,9 +286,7 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
     // Propagate to Replica :
     loop {
         while let Ok(v) = broadcast_receiver.recv().await {
-            println!("v = {:?}", v);
             let new_v = v.deserialize_bulkstring();
-            println!("Sending : new_v = {:?}", new_v);
             handler.write_value(new_v).await.unwrap();
 
         }
@@ -307,7 +303,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
     println!("Connection to master handled, trying to send HandShake.");
     let mut handshake = Value::Array(vec![Value::BulkString("PING".to_string())]);
     handler.write_value(handshake).await.unwrap();
-    let value = handler.read_value(None).await.unwrap();
+    let value = handler.read_value().await.unwrap();
     if let Some(value) = value {
         if value == Value::SimpleString("PONG".to_string()) {
             let cmd = vec![
@@ -319,7 +315,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
             handler.write_value(handshake).await.unwrap();
         }
     }
-    let value = handler.read_value(None).await.unwrap();
+    let value = handler.read_value().await.unwrap();
     if value == Some(Value::SimpleString("OK".to_string())) {
         let cmd = vec![
             Value::BulkString("REPLCONF".to_string()),
@@ -329,7 +325,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
         handshake = Value::Array(cmd);
         handler.write_value(handshake).await.unwrap();
     }
-    let value = handler.read_value(None).await.unwrap();
+    let value = handler.read_value().await.unwrap();
     if value == Some(Value::SimpleString("OK".to_string())) {
         let cmd = vec![
             Value::BulkString("PSYNC".to_string()),
@@ -339,7 +335,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
         handshake = Value::Array(cmd);
         handler.write_value(handshake).await.unwrap();
     }
-    if let Some(value) = handler.read_value(None).await.unwrap() {
+    if let Some(value) = handler.read_value().await.unwrap() {
         let (command, args) = extract_command(value).unwrap();
         match command.to_ascii_lowercase().as_str() {
             "fullresync"      => {
@@ -355,7 +351,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
         }
     }
 
-    if let Some(value) = handler.read_value(Some(true)).await.unwrap() {
+    if let Some(value) = handler.read_hex().await.unwrap() {
         // Process le transfert du RDB file ..
 
     }
@@ -364,7 +360,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
 
 
     loop {
-        let value = handler.read_value(None).await.unwrap();
+        let value = handler.read_value().await.unwrap();
         if let Some(v) = value {
             println!("Got value ICI {:?}", v);
         }
