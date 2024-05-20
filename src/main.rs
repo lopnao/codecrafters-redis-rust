@@ -11,6 +11,7 @@ use nanoid::nanoid;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use thiserror::Error;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{broadcast, mpsc};
 use tokio::sync::mpsc::{Receiver, Sender};
 use commands::server_info;
@@ -276,8 +277,8 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     // Sending RDB File
                     println!("[INFO] - Sending RDB File to Replica");
                     let test_big_buffer = b"$88\r\nREDIS0011\xfa\tredis-ver\x057.2.0\xfa\nredis-bits\xc0@\xfa\x05ctime\xc2m\x08\xbce\xfa\x08used-mem\xc2\xb0\xc4\x10\0\xfa\x08aof-base\xc0\0\xff\xf0n;\xfe\xc0\xffZ\xa2*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\n123\r\n";
-                    handler.
-                        (test_big_buffer).await.unwrap();
+                    handler.stream.write_all(test_big_buffer).await.unwrap();
+                    //todo a la place du hardcoded test
                     // handler.write_value(send_rdb_base64_to_hex(EMPTY_RDB_FILE)).await.unwrap();
                     to_replicate = true;
                     Value::SimpleString("OK".to_string())
