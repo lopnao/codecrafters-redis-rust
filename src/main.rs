@@ -351,7 +351,13 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
                     server_info(server_info_clone.clone(), args);
                 },
                 "replconf" => {
-                    configure_replica(args);
+                    let res = configure_replica(args);
+                    match res {
+                        Value::Array(_) => {
+                            handler.write_value(res).await.unwrap();
+                        },
+                        _ => {}
+                    }
                 },
                 c => panic!("Cannot handle command {}", c),
             }

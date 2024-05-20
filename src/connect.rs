@@ -18,16 +18,50 @@ pub async fn connect_to_master(master_host: Option<String>, master_port: Option<
 
 
 pub fn configure_replica(args: Vec<Value>) -> Value {
-    if args[0] == Value::BulkString("listening-port".to_string()) {
-        let slave_port = unpack_bulk_str(args[1].clone()).unwrap().parse::<u16>().unwrap();
-        println!("Received slave port of : {:?}", slave_port);
+    let first_arg = args[0].clone();
+    match first_arg {
+        Value::BulkString(s) if s.as_str() == "listening-port" => {
+            let slave_port = unpack_bulk_str(args[1].clone()).unwrap().parse::<u16>().unwrap();
+            println!("Received slave port of : {:?}", slave_port);
+            return Value::SimpleString("OK".to_string());
+        },
+        Value::BulkString(s) if s.as_str() == "capa" => {
+            if args[1] == Value::BulkString("psync2".to_string()) {
+                return Value::SimpleString("OK".to_string());
+            }
+            return Value::SimpleString("OK".to_string());
+        },
+        Value::Array(v) => {
+            if v.len() > 2 {
+                if let Value::BulkString(second) = v[1].clone() {
+                    match second.to_ascii_lowercase().as_str() {
+                        "getack" => {
+                            if let Value::BulkString(third) = v[2].clone() {
+                                match third.to_ascii_lowercase().as_str() {
+                                    "*" => {
+                                        let offset = 0;
+                                        let values = vec![
+                                            Value::BulkString("REPLCONF".to_string()),
+                                            Value::BulkString("ACK".to_string()),
+                                            Value::BulkString(format!("{}", offset)),
 
-        return Value::SimpleString("OK".to_string());
-    } else if   args[0] == Value::BulkString("capa".to_string()) &&
-                args[1] == Value::BulkString("psync2".to_string()) {
-        return Value::SimpleString("OK".to_string());
+                                        ];
+                                        return Value::Array(values);
+                                    }
+                                    _ => {},
+                                }
+                            }
+
+                        },
+                        _ => { },
+                    }
+                }
+
+            }
+            Value::NullBulkString()
+        },
+        _ => { Value::NullBulkString() }
     }
-    Value::SimpleString("NOK".to_string())
 }
 
 pub fn psync(args: Vec<Value>, server_info: Arc<Mutex<RedisServer>>) -> Value {
