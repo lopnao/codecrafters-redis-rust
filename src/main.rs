@@ -312,114 +312,26 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
     // Local variable of self_port (listening_port)
     let self_port = { server_info_clone.lock().unwrap().self_port.clone() };
 
-    async fn handshake_steps(handler_to_master: &mut RespHandler, handshake_steps_done_orig: &mut usize, value: Value, self_port: u16, server_info: Arc<Mutex<RedisServer>>) -> Result<usize>{
-        let handshake_steps_done = handshake_steps_done_orig.clone();
-        println!("Avant Match !");
-        return match handshake_steps_done {
-            0       => {
-                // HandShake (1/3)
-                let handshake = Value::Array(vec![Value::BulkString("PING".to_string())]);
-                println!("ET LA! handle = {:?}", handler_to_master);
-                handler_to_master.write_value(handshake).await?;
-                println!("ET APRES LA!");
-                Ok(handshake_steps_done + 1)
-            },
-            1       => {
-                // HandShake (2/3)
-                if value == Value::SimpleString("PONG".to_string()) {
-                    let cmd = vec![
-                        Value::BulkString("REPLCONF".to_string()),
-                        Value::BulkString("listening-port".to_string()),
-                        Value::BulkString(format!("{}", self_port)),
-                    ];
-                    let handshake = Value::Array(cmd);
-                    handler_to_master.write_value(handshake).await?;
-                    return Ok(handshake_steps_done + 1);
-                }
-                Err(anyhow::anyhow!(format!("Error during handshake step : {}", handshake_steps_done + 1)))
-            },
-            2       => {
-                // HandShake (2/3)
-                if value == Value::SimpleString("OK".to_string()) {
-                    let cmd = vec![
-                        Value::BulkString("PSYNC".to_string()),
-                        Value::BulkString("?".to_string()),
-                        Value::BulkString("-1".to_string()),
-                    ];
-                    let handshake = Value::Array(cmd);
-                    handler_to_master.write_value(handshake).await?;
-                    return Ok(handshake_steps_done + 1);
-                }
-                Err(anyhow::anyhow!(format!("Error during handshake step : {}", handshake_steps_done + 1)))
-            },
-            3       => {
-                if value == Value::SimpleString("OK".to_string()) {
-                    let cmd = vec![
-                        Value::BulkString("REPLCONF".to_string()),
-                        Value::BulkString("capa".to_string()),
-                        Value::BulkString("psync2".to_string()),
-                    ];
-                    let handshake = Value::Array(cmd);
-                    handler_to_master.write_value(handshake).await?;
-                    return Ok(handshake_steps_done + 1);
-                }
-                Err(anyhow::anyhow!(format!("Error during handshake step : {}", handshake_steps_done + 1)))
-            },
-            4       => {
-                if value == Value::SimpleString("OK".to_string()) {
-                    let cmd = vec![
-                        Value::BulkString("PSYNC".to_string()),
-                        Value::BulkString("?".to_string()),
-                        Value::BulkString("-1".to_string()),
-                    ];
-                    let handshake = Value::Array(cmd);
-                    handler_to_master.write_value(handshake).await?;
-                    return Ok(handshake_steps_done + 1);
-                }
-                Err(anyhow::anyhow!(format!("Error during handshake step : {}", handshake_steps_done + 1)))
-            },
-            5       => {
 
-                let (command, args) = extract_command(value)?;
-                match command.to_ascii_lowercase().as_str() {
-                    "fullresync"      => {
-                        if let Value::SimpleString(s) = args[0].clone() {
-                            {
-                                println!("Changed internal master_id to : {}", s);
-                                let _temp = server_info.lock().unwrap().change_replid(s);
-
-                            };
-                            return Ok(handshake_steps_done + 1);
-                        };
-                        return Err(anyhow::anyhow!(format!("Error during handshake step : {}", handshake_steps_done + 1)));
-                    },
-                    c     => panic!("Cannot handle command {} during handshake", c),
-                }
-
-
-            },
-            6       => {
-                // Receiving the RDB file
-                // Process the transfer of RDB file ..
-                println!("Got the RDB File : {:?}", value);
-                Ok(handshake_steps_done + 1)
-
-            }
-            _   => {
-                return Err(anyhow::anyhow!(format!("Error during handshake step : {}", handshake_steps_done + 1)));
-            }
-        };
-    }
 
     let mut handshake_steps_done = 0;
 
     let mut handler = resp::RespHandler::new(stream_to_master);
     println!("Connection to master handled, trying to send HandShake.");
     while handshake_steps_done < 6 {
-        println!("JE SUIS ICI");
-        let value = if handshake_steps_done == 5 { handler.read_hex().await.unwrap() } else { handler.read_value().await.unwrap() };
+        println!("JE SUIS ICI handshake = {:?}", handshake_steps_done);
+        let value = if handshake_steps_done == 5 {
+            handler.read_hex().await.unwrap()
+        } else if handshake_steps_done == 0 {
+            Some(Value::SimpleString("Initiator".to_string()))
+        } else {
+            handler.read_value().await.unwrap()
+        };
+        println!("JE SUIS ICI handshake = {:?} et value = {:?}", handshake_steps_done, value);
         handshake_steps_done = handshake_steps(&mut handler, &mut handshake_steps_done, value.unwrap(), self_port, server_info_clone.clone()).await.unwrap();
     }
+
+    println!("JE SUIS LIIIIIIIIIBRE");
 
 
 
@@ -513,6 +425,91 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
     }
 }
 
+async fn handshake_steps(handler_to_master: &mut RespHandler, handshake_steps_done_orig: &mut usize, value: Value, self_port: u16, server_info: Arc<Mutex<RedisServer>>) -> Result<usize>{
+    let handshake_steps_done = handshake_steps_done_orig.clone();
+    println!("Avant Match !");
+    return match handshake_steps_done {
+        0       => {
+            // HandShake (1/3)
+            let handshake = Value::Array(vec![Value::BulkString("PING".to_string())]);
+            println!("ET LA! handle = {:?}", handler_to_master);
+            handler_to_master.write_value(handshake).await?;
+            println!("ET APRES LA!");
+            Ok(handshake_steps_done + 1)
+        },
+        1       => {
+            // HandShake (2/3)
+            if value == Value::SimpleString("PONG".to_string()) {
+                let cmd = vec![
+                    Value::BulkString("REPLCONF".to_string()),
+                    Value::BulkString("listening-port".to_string()),
+                    Value::BulkString(format!("{}", self_port)),
+                ];
+                let handshake = Value::Array(cmd);
+                handler_to_master.write_value(handshake).await?;
+                return Ok(handshake_steps_done + 1);
+            }
+            Err(anyhow::anyhow!(format!("Error during handshake step : {}", handshake_steps_done + 1)))
+        },
+        2       => {
+            if value == Value::SimpleString("OK".to_string()) {
+                let cmd = vec![
+                    Value::BulkString("REPLCONF".to_string()),
+                    Value::BulkString("capa".to_string()),
+                    Value::BulkString("psync2".to_string()),
+                ];
+                let handshake = Value::Array(cmd);
+                handler_to_master.write_value(handshake).await?;
+                return Ok(handshake_steps_done + 1);
+            }
+            Err(anyhow::anyhow!(format!("Error during handshake step : {}", handshake_steps_done + 1)))
+        },
+        3       => {
+            // HandShake (2/3)
+            if value == Value::SimpleString("OK".to_string()) {
+                let cmd = vec![
+                    Value::BulkString("PSYNC".to_string()),
+                    Value::BulkString("?".to_string()),
+                    Value::BulkString("-1".to_string()),
+                ];
+                let handshake = Value::Array(cmd);
+                handler_to_master.write_value(handshake).await?;
+                return Ok(handshake_steps_done + 1);
+            }
+            Err(anyhow::anyhow!(format!("Error during handshake step : {}", handshake_steps_done + 1)))
+        },
+        4       => {
+
+            let (command, args) = extract_command(value)?;
+            match command.to_ascii_lowercase().as_str() {
+                "fullresync"      => {
+                    if let Value::SimpleString(s) = args[0].clone() {
+                        {
+                            println!("Changed internal master_id to : {}", s);
+                            let _temp = server_info.lock().unwrap().change_replid(s);
+
+                        };
+                        return Ok(handshake_steps_done + 1);
+                    };
+                    return Err(anyhow::anyhow!(format!("Error during handshake step : {}", handshake_steps_done + 1)));
+                },
+                c     => panic!("Cannot handle command {} during handshake", c),
+            }
+
+
+        },
+        5       => {
+            // Receiving the RDB file
+            // Process the transfer of RDB file ..
+            println!("Got the RDB File : {:?}", value);
+            Ok(handshake_steps_done + 1)
+
+        }
+        _   => {
+            return Err(anyhow::anyhow!(format!("Error during handshake step : {}", handshake_steps_done + 1)));
+        }
+    };
+}
 
 fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
     match value {
