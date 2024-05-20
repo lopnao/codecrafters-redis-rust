@@ -297,10 +297,13 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
     }
 
     // Propagate to Replica if the connection is to a Replica node :
-    loop {
-        while let Ok(v) = broadcast_receiver.recv().await {
-            let new_v = v.deserialize_bulkstring();
-            handler.write_value(new_v).await.unwrap();
+    if to_replicate {
+        loop {
+            while let Ok(v) = broadcast_receiver.recv().await {
+                let new_v = v.deserialize_bulkstring();
+                println!("Je vais envoyer : {:?} à {:?}", new_v, handler.client_addr().clone());
+                handler.write_value(new_v).await.unwrap();
+            }
         }
     }
 }
@@ -309,17 +312,19 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
 async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: Arc<Mutex<RedisServer>>,
                                data1: Arc<Mutex<HashMap<String, KeyValueData>>>,
                                exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
+
     // Local variable of self_port (listening_port)
     let self_port = { server_info_clone.lock().unwrap().self_port.clone() };
 
+    // // Init of the ValuePool
+    // let mut value_pool = ValuePool::new();
 
+    let mut handler = RespHandler::new(stream_to_master);
 
+    // Start of the HandShake
     let mut handshake_steps_done = 0;
-
-    let mut handler = resp::RespHandler::new(stream_to_master);
     println!("Connection to master handled, trying to send HandShake.");
     while handshake_steps_done < 6 {
-        println!("JE SUIS ICI handshake = {:?}", handshake_steps_done);
         let value = if handshake_steps_done == 5 {
             handler.read_hex().await.unwrap()
         } else if handshake_steps_done == 0 {
@@ -327,79 +332,8 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
         } else {
             handler.read_value().await.unwrap()
         };
-        println!("JE SUIS ICI handshake = {:?} et value = {:?}", handshake_steps_done, value);
         handshake_steps_done = handshake_steps(&mut handler, &mut handshake_steps_done, value.unwrap(), self_port, server_info_clone.clone()).await.unwrap();
     }
-
-    println!("JE SUIS LIIIIIIIIIBRE");
-
-
-
-
-    // // HandShake (1/3)
-    // let mut handshake = Value::Array(vec![Value::BulkString("PING".to_string())]);
-    // handler.write_value(handshake).await.unwrap();
-    //
-    //
-    // // HandShake (2/3)
-    // let value = handler.read_value().await.unwrap();
-    // if let Some(value) = value {
-    //     if value == Value::SimpleString("PONG".to_string()) {
-    //         let cmd = vec![
-    //             Value::BulkString("REPLCONF".to_string()),
-    //             Value::BulkString("listening-port".to_string()),
-    //             Value::BulkString(format!("{}", self_port)),
-    //         ];
-    //         handshake = Value::Array(cmd);
-    //         handler.write_value(handshake).await.unwrap();
-    //     }
-    // }
-    // let value = handler.read_value().await.unwrap();
-    // if value == Some(Value::SimpleString("OK".to_string())) {
-    //     let cmd = vec![
-    //         Value::BulkString("REPLCONF".to_string()),
-    //         Value::BulkString("capa".to_string()),
-    //         Value::BulkString("psync2".to_string()),
-    //     ];
-    //     handshake = Value::Array(cmd);
-    //     handler.write_value(handshake).await.unwrap();
-    // }
-    //
-    // // HandShake (3/3)
-    // let value = handler.read_value().await.unwrap();
-    // if value == Some(Value::SimpleString("OK".to_string())) {
-    //     let cmd = vec![
-    //         Value::BulkString("PSYNC".to_string()),
-    //         Value::BulkString("?".to_string()),
-    //         Value::BulkString("-1".to_string()),
-    //     ];
-    //     handshake = Value::Array(cmd);
-    //     handler.write_value(handshake).await.unwrap();
-    // }
-    // if let Some(value) = handler.read_value().await.unwrap() {
-    //     let (command, args) = extract_command(value).unwrap();
-    //     match command.to_ascii_lowercase().as_str() {
-    //         "fullresync"      => {
-    //             if let Value::SimpleString(s) = args[0].clone() {
-    //                 {
-    //                     println!("Changed internal master_id to : {}", s);
-    //                     let _temp = server_info_clone.lock().unwrap().change_replid(s);
-    //                 };
-    //             }
-    //
-    //         },
-    //         c     => panic!("Cannot handle command {} during handshake", c),
-    //     }
-    // }
-    //
-    //
-    // // Receiving the RDB file
-    // if let Some(value) = handler.read_hex().await.unwrap() {
-    //     // Process the transfer of RDB file ..
-    //     println!("Got the RDB File : {:?}", value);
-    // }
-    //
-
 
 
     loop {
@@ -427,14 +361,11 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
 
 async fn handshake_steps(handler_to_master: &mut RespHandler, handshake_steps_done_orig: &mut usize, value: Value, self_port: u16, server_info: Arc<Mutex<RedisServer>>) -> Result<usize>{
     let handshake_steps_done = handshake_steps_done_orig.clone();
-    println!("Avant Match !");
     return match handshake_steps_done {
         0       => {
             // HandShake (1/3)
             let handshake = Value::Array(vec![Value::BulkString("PING".to_string())]);
-            println!("ET LA! handle = {:?}", handler_to_master);
             handler_to_master.write_value(handshake).await?;
-            println!("ET APRES LA!");
             Ok(handshake_steps_done + 1)
         },
         1       => {
@@ -527,9 +458,6 @@ fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
         }
         Value::BulkRawHexFile(_s) => {
             Err(anyhow::anyhow!("BulkStringFile value response is todo!"))
-        }
-        Value::CommandsArray(s) => {
-            Ok(("values_to_process".to_string(), s))
         }
         Value::Array(a) => {
             Ok((unpack_bulk_str(a[0].clone())?, a[1..].to_vec()))

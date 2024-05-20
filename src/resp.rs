@@ -11,8 +11,89 @@ pub enum Value {
     BulkRawHexFile(Vec<u8>),
     ArrayBulkString(Vec<Value>),
     Array(Vec<Value>),
-    CommandsArray(Vec<Value>),
+}
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ValuePool {
+    pool: Vec<Value>,
+    remaining: usize,
+}
+
+#[allow(dead_code)]
+impl ValuePool {
+    pub fn new() -> ValuePool {
+        ValuePool {
+            pool: vec![],
+            remaining: 0,
+        }
+    }
+
+    async fn next_read_value(&mut self, handler: &mut RespHandler) -> Option<<ValuePool as IntoIterator>::Item> {
+        if self.pool.len() == 0 {
+            return handler.read_value().await.ok()?
+        }
+        let result = self.pool.remove(0);
+        self.remaining -= 1;
+        Some(result)
+    }
+
+    async fn next_read_hex(&mut self, handler: &mut RespHandler) -> Option<<ValuePool as IntoIterator>::Item> {
+        if self.pool.len() == 0 {
+            return handler.read_hex().await.ok()?
+        }
+        match self.pool[0] {
+            Value::BulkRawHexFile(_) => {
+                let result = self.pool.remove(0);
+                self.remaining -= 1;
+                Some(result)
+            }
+            _       => {
+                None
+            }
+        }
+
+    }
+
+    pub fn add_value(mut self, value: Value) {
+        self.pool.push(value);
+        self.remaining += 1;
+    }
+
+    pub fn pop_value(mut self) -> Option<Value> {
+        if self.remaining == 0 {
+            return None;
+        }
+        self.remaining -= 1;
+        self.pool.pop()
+
+    }
+}
+
+pub struct ValuePoolIntoIterator {
+    value_pool: ValuePool,
+}
+
+impl IntoIterator for ValuePool {
+    type Item = Value;
+    type IntoIter = ValuePoolIntoIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Self::IntoIter { value_pool: self }
+    }
+}
+
+
+impl Iterator for ValuePoolIntoIterator {
+    type Item = Value;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.value_pool.pool.len() == 0 {
+            return None;
+        }
+        let result = self.value_pool.pool.remove(0);
+        self.value_pool.remaining -= 1;
+        Some(result)
+    }
 }
 
 
@@ -35,7 +116,7 @@ impl Value {
             },
             Value::Array(a) => format!("{}", a.iter().fold(format!("*{}\r\n", a.len()), |acc, s| format!("{}{}", acc, s.clone().serialize()),)),
             Value::BulkRawHexFile(_v)    => "".to_string(),
-            _ => "".to_string(),
+            // _ => "".to_string(),
         }
     }
 
@@ -68,6 +149,7 @@ impl Value {
 pub struct RespHandler {
     stream: TcpStream,
     buffer: BytesMut,
+    value_pool: ValuePool,
 }
 
 impl RespHandler {
@@ -75,10 +157,22 @@ impl RespHandler {
         RespHandler {
             stream,
             buffer: BytesMut::with_capacity(512),
+            value_pool: ValuePool::new(),
         }
     }
 
+    pub fn client_addr(&self) -> String {
+        return format!("{:?}",self.stream.peer_addr())
+    }
+
     pub async fn read_value(&mut self) -> Result<Option<Value>> {
+        if self.value_pool.remaining > 0 {
+            let next = self.value_pool.pool[0].clone();
+            self.value_pool.pool.remove(0);
+            self.value_pool.remaining -= 1;
+            return Ok(Some(next))
+        }
+
         let bytes_read = self.stream.read_buf(&mut self.buffer).await?;
         if bytes_read == 0 {
             return Ok(None);
@@ -98,12 +192,29 @@ impl RespHandler {
             total_consumed += bytes_consumed;
             let _ = buffer_splitted.split_to(total_consumed);
         }
-
-        Ok(Some(Value::CommandsArray(commands)))
+        let next = commands[0].clone();
+        commands.remove(0);
+        for command in commands {
+            self.value_pool.pool.push(command);
+            self.value_pool.remaining += 1;
+        }
+        Ok(Some(next))
 
     }
 
     pub async fn read_hex(&mut self) -> Result<Option<Value>> {
+        if self.value_pool.remaining > 0 {
+            let next = self.value_pool.pool[0].clone();
+            match next {
+                Value::BulkRawHexFile(_) => {
+                    self.value_pool.pool.remove(0);
+                    self.value_pool.remaining -= 1;
+                    return Ok(Some(next));
+                }
+                _ => {}
+            }
+        }
+
         let bytes_read = self.stream.read_buf(&mut self.buffer).await?;
         if bytes_read == 0 {
             return Ok(None);
