@@ -163,6 +163,7 @@ async fn main() {
     let _cleaning_thread = thread::spawn({
         let data_clean = Arc::clone(&data);
         let exp_clean = Arc::clone(&exp_heap);
+
         move || {
             key_expiry_thread(data_clean, exp_clean, EXPIRY_LOOP_TIME)
         }
