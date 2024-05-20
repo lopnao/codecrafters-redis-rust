@@ -90,6 +90,7 @@ impl RespHandler {
             return Ok(Some(v));
         }
         let mut total_consumed = bytes_consumed;
+        let _ = buffer_splitted.split_to(total_consumed);
         let mut commands = vec![v];
         while let Ok((v, bytes_consumed)) = parse_message(buffer_splitted.clone()) {
             commands.push(v);
