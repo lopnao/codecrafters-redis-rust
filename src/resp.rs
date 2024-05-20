@@ -167,6 +167,7 @@ impl RespHandler {
 
     pub async fn read_value(&mut self) -> Result<Option<Value>> {
         if self.value_pool.remaining > 0 {
+            println!("DEBUG :: POOL = {:?}", self.value_pool.pool);
             let next = self.value_pool.pool[0].clone();
             self.value_pool.pool.remove(0);
             self.value_pool.remaining -= 1;
@@ -204,6 +205,7 @@ impl RespHandler {
 
     pub async fn read_hex(&mut self) -> Result<Option<Value>> {
         if self.value_pool.remaining > 0 {
+            println!("DEBUG :: POOL = {:?}", self.value_pool.pool);
             let next = self.value_pool.pool[0].clone();
             match next {
                 Value::BulkRawHexFile(_) => {
