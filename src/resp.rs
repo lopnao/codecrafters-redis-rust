@@ -102,10 +102,10 @@ impl RespHandler {
             Value::BulkRawHexFile(mut v) => {
                 let mut enrobage = format!("${}\r\n", v.len()).as_bytes().to_vec();
                 enrobage.append(&mut v);
-                self.stream.write(enrobage.as_slice()).await?;
+                self.stream.write_all(enrobage.as_slice()).await?;
             }
             value   => {
-                self.stream.write(value.serialize().as_bytes()).await?;
+                self.stream.write_all(value.serialize().as_bytes()).await?;
             }
         }
 
