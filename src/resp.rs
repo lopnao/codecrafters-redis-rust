@@ -166,7 +166,9 @@ impl RespHandler {
     }
 
     pub async fn read_value(&mut self) -> Result<Option<Value>> {
+        println!("TESTEUR DE BUFFER : {:?}", self.buffer);
         let bytes_read = self.stream.read_buf(&mut self.buffer).await?;
+        println!("JE SUIS PASSE!");
         if bytes_read == 0 {
             return Ok(None);
         }
