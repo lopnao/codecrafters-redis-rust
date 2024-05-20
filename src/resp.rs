@@ -148,7 +148,7 @@ impl Value {
 #[derive(Debug)]
 pub struct RespHandler {
     stream: TcpStream,
-    buffer: BytesMut,
+    pub buffer: BytesMut,
     value_pool: ValuePool,
 }
 
