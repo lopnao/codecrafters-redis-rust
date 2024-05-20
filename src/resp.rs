@@ -182,6 +182,7 @@ impl RespHandler {
     pub async fn read_hex(&mut self) -> Result<Option<Value>> {
         if !self.buffer.is_empty() {
             let (v, bytes_consumed) = parse_hexdump(self.buffer.clone())?;
+            println!("SPLITTING BUFFER AT {:?} !", bytes_consumed);
             let _ = self.buffer.split_to(bytes_consumed);
             return Ok(Some(v));
         }
@@ -191,6 +192,7 @@ impl RespHandler {
         }
         // Added to process RDB File HexDump Transfer
         let (v, bytes_consumed) = parse_hexdump(self.buffer.split())?;
+        println!("SPLITTING BUFFER AT {:?} !", bytes_consumed);
         let _ = self.buffer.split_to(bytes_consumed);
 
         Ok(Some(v))
