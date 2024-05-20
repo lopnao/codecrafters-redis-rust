@@ -83,7 +83,7 @@ impl RespHandler {
         if bytes_read == 0 {
             return Ok(None);
         }
-        let buffer_splitted = self.buffer.split();
+        let mut buffer_splitted = self.buffer.split();
         let (v, bytes_consumed) = parse_message(buffer_splitted.clone())?;
 
         if bytes_read == bytes_consumed {
@@ -91,10 +91,11 @@ impl RespHandler {
         }
         let mut total_consumed = bytes_consumed;
         let mut commands = vec![v];
-        while let Ok((v, bytes_consumed)) = parse_message(buffer_splitted.clone().split_to(total_consumed)) {
+        while let Ok((v, bytes_consumed)) = parse_message(buffer_splitted.clone()) {
             commands.push(v);
             println!("total_consumed = {:?}", total_consumed);
             total_consumed += bytes_consumed;
+            let _ = buffer_splitted.split_to(total_consumed);
         }
 
         Ok(Some(Value::CommandsArray(commands)))
