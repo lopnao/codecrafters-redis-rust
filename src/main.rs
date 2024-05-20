@@ -332,6 +332,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
         } else {
             handler.read_value().await.unwrap()
         };
+        println!("ICI LE BUFFER EST : {:?}", handler.buffer);
         handshake_steps_done = handshake_steps(&mut handler, &mut handshake_steps_done, value.unwrap(), self_port, server_info_clone.clone()).await.unwrap();
     }
 
