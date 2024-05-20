@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::time::Instant;
 use std::time::Duration;
+use tokio::sync::watch;
 use crate::resp::Value;
 use crate::unpack_bulk_str;
 
@@ -76,7 +77,9 @@ impl KeyValueData {
     }
 }
 
-pub fn key_expiry_thread(data1: Arc<Mutex<HashMap<String, KeyValueData>>>, exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>, loop_every_in_ms: u64) {
+pub fn key_expiry_thread(data1: Arc<Mutex<HashMap<String, KeyValueData>>>,
+                         exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>,
+                         loop_every_in_ms: u64) {
     let initial_duration = Duration::from_millis(loop_every_in_ms);
     let mut sleep_duration = Duration::from_millis(loop_every_in_ms);
 
