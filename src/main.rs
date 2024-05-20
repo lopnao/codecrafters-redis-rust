@@ -13,14 +13,16 @@ use rand::Rng;
 use thiserror::Error;
 use tokio::sync::{broadcast, mpsc};
 use tokio::sync::mpsc::{Receiver, Sender};
+use commands::server_info;
 use db::KeyValueData;
 use crate::connect::{configure_replica, connect_to_master, psync, send_rdb_base64_to_hex};
-use crate::db::{data_get, data_set, key_expiry_thread, server_info};
+use crate::db::{data_get, data_set, key_expiry_thread};
 
 mod resp;
 mod db;
 mod structs;
 mod connect;
+mod commands;
 
 const EXPIRY_LOOP_TIME: u64 = 50; // 50 milli seconds
 const EMPTY_RDB_FILE: &str = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
@@ -137,8 +139,7 @@ async fn main() {
             return;
         }
     };
-    let (broadcast_sender, broadcast_receiver) = tokio::sync::broadcast::channel::<Value>(50);
-    // let (master_tx, slave_rx) = mpsc::channel::<Value>(50);
+    let (broadcast_sender, broadcast_receiver) = broadcast::channel::<Value>(50);
     let (slave_tx, master_rx) = mpsc::channel::<Value>(50);
 
     let addr = {
@@ -174,9 +175,9 @@ async fn main() {
 
         match stream_to_master {
             Ok(stream_to_master) => {
+                let server_info_clone = server_info.clone();
                 let data1 = Arc::clone(&data);
                 let exp_heap1 = Arc::clone(&exp_heap);
-                let server_info_clone = server_info.clone();
                 tokio::spawn(async move {
                     handle_conn_to_master(stream_to_master, server_info_clone, data1, exp_heap1).await
                 });
@@ -378,11 +379,24 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
     loop {
         let value = handler.read_value().await.unwrap();
         if let Some(v) = value {
-            println!("Got value ICI {:?}", v);
+            println!("Got value from master {:?}", v);
+            let (command, args) = extract_command(v).unwrap();
+            match command.to_ascii_lowercase().as_str() {
+                "set"   => {
+                    let data2 = Arc::clone(&data1);
+                    let exp_heap2 = Arc::clone(&exp_heap1);
+                    data_set(args, data2, exp_heap2);
+                },
+                "info"  => {
+                    server_info(server_info_clone.clone(), args);
+                },
+                "replconf" => {
+                    configure_replica(args);
+                },
+                c => panic!("Cannot handle command {}", c),
+            }
         }
-
     }
-
 }
 
 
