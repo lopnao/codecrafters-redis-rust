@@ -93,7 +93,7 @@ impl RespHandler {
         let mut commands = vec![v];
         while let Ok((v, bytes_consumed)) = parse_message(buffer_splitted.clone().split_to(total_consumed)) {
             commands.push(v);
-            println!("bytes_consumed = {:?}", bytes_consumed);
+            println!("bytes_consumed = {:?}", total_consumed);
             total_consumed += bytes_consumed;
         }
 
