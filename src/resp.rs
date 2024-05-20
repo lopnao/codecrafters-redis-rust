@@ -170,8 +170,8 @@ impl RespHandler {
         if bytes_read == 0 {
             return Ok(None);
         }
-        let (v, _) = parse_message(self.buffer.split())?;
-
+        let (v, bytes_consumed) = parse_message(self.buffer.clone())?;
+        let _ = self.buffer.split_to(bytes_consumed);
         Ok(Some(v))
 
     }
