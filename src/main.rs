@@ -352,6 +352,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
                 },
                 "replconf" => {
                     let res = configure_replica(args);
+                    println!("ICI : res = {:?}", res);
                     match res {
                         Value::Array(_) => {
                             handler.write_value(res).await.unwrap();
