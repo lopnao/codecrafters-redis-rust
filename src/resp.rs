@@ -300,7 +300,6 @@ fn parse_bulk_hex(buffer: BytesMut) -> Result<(Value, usize)> {
     };
     let end_of_bulk_hex = bytes_consumed + bulk_hex_len as usize;
     let total_parsed = end_of_bulk_hex + 2;
-    println!("In parse_bulk_hex :: BUFFER = {:?} et total_parsed = {:?}", buffer, total_parsed);
 
     Ok((Value::BulkRawHexFile(buffer[bytes_consumed..end_of_bulk_hex].to_vec()), total_parsed))
 }
