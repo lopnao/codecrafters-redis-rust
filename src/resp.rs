@@ -11,6 +11,7 @@ pub enum Value {
     BulkRawHexFile(Vec<u8>),
     ArrayBulkString(Vec<Value>),
     Array(Vec<Value>),
+    SimpleInteger(i64),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -115,6 +116,7 @@ impl Value {
                 format!("${}\r\n{}\r\n", a_final.chars().count(), a_final)
             },
             Value::Array(a) => format!("{}", a.iter().fold(format!("*{}\r\n", a.len()), |acc, s| format!("{}{}", acc, s.clone().serialize()),)),
+            Value::SimpleInteger(i) => format!(":{}\r\n", i),
             Value::BulkRawHexFile(_v)    => "".to_string(),
             // _ => "".to_string(),
         }
