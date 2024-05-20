@@ -174,6 +174,7 @@ impl RespHandler {
             return Ok(Some(next))
         }
 
+
         let bytes_read = self.stream.read_buf(&mut self.buffer).await?;
         if bytes_read == 0 {
             return Ok(None);
