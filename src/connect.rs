@@ -31,7 +31,7 @@ pub fn configure_replica(args: Vec<Value>) -> Value {
             }
             return Value::SimpleString("OK".to_string());
         },
-        Value::Array(v) => {
+        Value::Array(v) | Value::ArrayBulkString(v) => {
             if v.len() > 2 {
                 if let Value::BulkString(second) = v[1].clone() {
                     match second.to_ascii_lowercase().as_str() {
