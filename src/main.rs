@@ -333,8 +333,10 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
             handler.read_value().await.unwrap()
         };
         handshake_steps_done = handshake_steps(&mut handler, &mut handshake_steps_done, value.unwrap(), self_port, server_info_clone.clone()).await.unwrap();
-    }
 
+    }
+    println!("ON EST ICI ON A PASSE LE HEX FILE");
+    println!("ICI le BUFFER : {:?}", handler.buffer);
 
     loop {
         let value = handler.read_value().await.unwrap();
