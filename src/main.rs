@@ -269,7 +269,7 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     server_info(server_info_clone.clone(), args)
                 },
                 "replconf" => {
-                    configure_replica(args)
+                    configure_replica(args, 0)
                 },
                 "psync" => {
                     handler.write_value(psync(args, server_info_clone.clone())).await.unwrap();
@@ -336,9 +336,11 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
 
     }
 
+    let mut offset = 0;
+
     loop {
-        let value = handler.read_value().await.unwrap();
-        if let Some(v) = value {
+        let value = handler.read_value_and_count().await.unwrap();
+        if let Some((v, to_add)) = value {
             println!("Got value from master {:?}", v);
             let (command, args) = extract_command(v).unwrap();
             match command.to_ascii_lowercase().as_str() {
@@ -351,7 +353,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
                     server_info(server_info_clone.clone(), args);
                 },
                 "replconf" => {
-                    let res = configure_replica(args);
+                    let res = configure_replica(args, offset);
                     println!("ICI : res = {:?}", res);
                     match res {
                         Value::Array(_) => {
@@ -362,6 +364,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
                 },
                 c => panic!("Cannot handle command {}", c),
             }
+            offset += to_add;
         }
     }
 }
