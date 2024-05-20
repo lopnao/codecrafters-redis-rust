@@ -275,7 +275,10 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     handler.write_value(psync(args, server_info_clone.clone())).await.unwrap();
                     // Sending RDB File
                     println!("[INFO] - Sending RDB File to Replica");
-                    handler.write_value(send_rdb_base64_to_hex(EMPTY_RDB_FILE)).await.unwrap();
+                    let test_big_buffer = b"$88\r\nREDIS0011\xfa\tredis-ver\x057.2.0\xfa\nredis-bits\xc0@\xfa\x05ctime\xc2m\x08\xbce\xfa\x08used-mem\xc2\xb0\xc4\x10\0\xfa\x08aof-base\xc0\0\xff\xf0n;\xfe\xc0\xffZ\xa2*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\n123\r\n";
+                    handler.
+                        (test_big_buffer).await.unwrap();
+                    // handler.write_value(send_rdb_base64_to_hex(EMPTY_RDB_FILE)).await.unwrap();
                     to_replicate = true;
                     Value::SimpleString("OK".to_string())
                 },

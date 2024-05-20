@@ -147,9 +147,8 @@ impl Value {
 
 #[derive(Debug)]
 pub struct RespHandler {
-    stream: TcpStream,
+    pub stream: TcpStream,
     pub buffer: BytesMut,
-    value_pool: ValuePool,
 }
 
 impl RespHandler {
@@ -157,7 +156,6 @@ impl RespHandler {
         RespHandler {
             stream,
             buffer: BytesMut::with_capacity(512),
-            value_pool: ValuePool::new(),
         }
     }
 
