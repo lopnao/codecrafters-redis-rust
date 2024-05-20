@@ -417,6 +417,9 @@ fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
         Value::BulkRawHexFile(_s) => {
             Err(anyhow::anyhow!("BulkStringFile value response is todo!"))
         }
+        Value::CommandsArray(_s) => {
+            Err(anyhow::anyhow!("BulkStringFile value response is todo!"))
+        }
         Value::Array(a) => {
             Ok((unpack_bulk_str(a[0].clone())?, a[1..].to_vec()))
         }

@@ -11,6 +11,7 @@ pub enum Value {
     BulkRawHexFile(Vec<u8>),
     ArrayBulkString(Vec<Value>),
     Array(Vec<Value>),
+    CommandsArray(Vec<Value>),
 
 }
 
@@ -34,6 +35,7 @@ impl Value {
             },
             Value::Array(a) => format!("{}", a.iter().fold(format!("*{}\r\n", a.len()), |acc, s| format!("{}{}", acc, s.clone().serialize()),)),
             Value::BulkRawHexFile(_v)    => "".to_string(),
+            _ => "".to_string(),
         }
     }
 
@@ -81,9 +83,21 @@ impl RespHandler {
         if bytes_read == 0 {
             return Ok(None);
         }
-        let (v, _) = parse_message(self.buffer.split())?;
+        let buffer_splitted = self.buffer.split();
+        let (v, bytes_consumed) = parse_message(buffer_splitted.clone())?;
 
-        Ok(Some(v))
+        if bytes_read == bytes_consumed {
+            return Ok(Some(v));
+        }
+        let mut total_consumed = bytes_consumed;
+        let mut commands = vec![v];
+        while let Ok((v, bytes_consumed)) = parse_message(buffer_splitted.clone().split_to(total_consumed)) {
+            commands.push(v);
+            total_consumed += bytes_consumed;
+        }
+
+        Ok(Some(Value::CommandsArray(commands)))
+
     }
 
     pub async fn read_hex(&mut self) -> Result<Option<Value>> {
