@@ -299,7 +299,7 @@ fn parse_bulk_hex(buffer: BytesMut) -> Result<(Value, usize)> {
         return Err(anyhow::anyhow!("Invalid bulk hex format {:?}", buffer));
     };
     let end_of_bulk_hex = bytes_consumed + bulk_hex_len as usize;
-    let total_parsed = end_of_bulk_hex + 2;
+    let total_parsed = end_of_bulk_hex;
 
     Ok((Value::BulkRawHexFile(buffer[bytes_consumed..end_of_bulk_hex].to_vec()), total_parsed))
 }
