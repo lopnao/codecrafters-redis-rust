@@ -18,6 +18,7 @@ pub async fn connect_to_master(master_host: Option<String>, master_port: Option<
 
 
 pub fn configure_replica(args: Vec<Value>) -> Value {
+    if args.is_empty() { return Value::NullBulkString(); }
     let first_arg = args[0].clone();
     match first_arg {
         Value::BulkString(s) if s.as_str() == "listening-port" => {
@@ -32,7 +33,8 @@ pub fn configure_replica(args: Vec<Value>) -> Value {
             return Value::SimpleString("OK".to_string());
         },
         Value::BulkString(s) if s.to_ascii_lowercase().as_str() == "getack" => {
-            if args.len() > 2 {
+
+            if args.len() > 1 {
                 if let Value::BulkString(second) = args[1].clone() {
                     match second.to_ascii_lowercase().as_str() {
                         "*" => {
