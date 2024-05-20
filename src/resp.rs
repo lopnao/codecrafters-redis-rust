@@ -179,6 +179,22 @@ impl RespHandler {
 
     }
 
+    pub async fn read_value_and_count(&mut self) -> Result<Option<(Value, usize)>> {
+        if !self.buffer.is_empty() {
+            let (v, bytes_consumed) = parse_message(self.buffer.clone())?;
+            let _ = self.buffer.split_to(bytes_consumed);
+            return Ok(Some((v, bytes_consumed)));
+        }
+        let bytes_read = self.stream.read_buf(&mut self.buffer).await?;
+        if bytes_read == 0 {
+            return Ok(None);
+        }
+        let (v, bytes_consumed) = parse_message(self.buffer.clone())?;
+        let _ = self.buffer.split_to(bytes_consumed);
+        Ok(Some((v, bytes_consumed)))
+
+    }
+
     pub async fn read_hex(&mut self) -> Result<Option<Value>> {
         if !self.buffer.is_empty() {
             let (v, bytes_consumed) = parse_hexdump(self.buffer.clone())?;
