@@ -166,57 +166,17 @@ impl RespHandler {
     }
 
     pub async fn read_value(&mut self) -> Result<Option<Value>> {
-        if self.value_pool.remaining > 0 {
-            println!("DEBUG :: POOL = {:?}", self.value_pool.pool);
-            let next = self.value_pool.pool[0].clone();
-            self.value_pool.pool.remove(0);
-            self.value_pool.remaining -= 1;
-            return Ok(Some(next))
-        }
-
-
         let bytes_read = self.stream.read_buf(&mut self.buffer).await?;
         if bytes_read == 0 {
             return Ok(None);
         }
-        let mut buffer_splitted = self.buffer.split();
-        let (v, bytes_consumed) = parse_message(buffer_splitted.clone())?;
+        let (v, _) = parse_message(self.buffer.split())?;
 
-        if bytes_read == bytes_consumed {
-            return Ok(Some(v));
-        }
-        let mut total_consumed = bytes_consumed;
-        let _ = buffer_splitted.split_to(total_consumed);
-        let mut commands = vec![v];
-        while let Ok((v, bytes_consumed)) = parse_message(buffer_splitted.clone()) {
-            commands.push(v);
-            println!("total_consumed = {:?}", total_consumed);
-            total_consumed += bytes_consumed;
-            let _ = buffer_splitted.split_to(total_consumed);
-        }
-        let next = commands[0].clone();
-        commands.remove(0);
-        for command in commands {
-            self.value_pool.pool.push(command);
-            self.value_pool.remaining += 1;
-        }
-        Ok(Some(next))
+        Ok(Some(v))
 
     }
 
     pub async fn read_hex(&mut self) -> Result<Option<Value>> {
-        if self.value_pool.remaining > 0 {
-            println!("DEBUG :: POOL = {:?}", self.value_pool.pool);
-            let next = self.value_pool.pool[0].clone();
-            match next {
-                Value::BulkRawHexFile(_) => {
-                    self.value_pool.pool.remove(0);
-                    self.value_pool.remaining -= 1;
-                    return Ok(Some(next));
-                }
-                _ => {}
-            }
-        }
 
         let bytes_read = self.stream.read_buf(&mut self.buffer).await?;
         if bytes_read == 0 {
