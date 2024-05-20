@@ -191,7 +191,7 @@ impl RespHandler {
             return Ok(None);
         }
         // Added to process RDB File HexDump Transfer
-        let (v, bytes_consumed) = parse_hexdump(self.buffer.split())?;
+        let (v, bytes_consumed) = parse_hexdump(self.buffer.clone())?;
         println!("SPLITTING BUFFER AT {:?} !", bytes_consumed);
         let _ = self.buffer.split_to(bytes_consumed);
 
