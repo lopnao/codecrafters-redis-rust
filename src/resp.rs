@@ -64,7 +64,7 @@ impl Value {
 
 }
 
-
+#[derive(Debug)]
 pub struct RespHandler {
     stream: TcpStream,
     buffer: BytesMut,
