@@ -182,7 +182,11 @@ impl RespHandler {
     }
 
     pub async fn read_hex(&mut self) -> Result<Option<Value>> {
-
+        if !self.buffer.is_empty() {
+            let (v, bytes_consumed) = parse_hexdump(self.buffer.clone())?;
+            let _ = self.buffer.split_to(bytes_consumed);
+            return Ok(Some(v));
+        }
         let bytes_read = self.stream.read_buf(&mut self.buffer).await?;
         if bytes_read == 0 {
             return Ok(None);
@@ -282,6 +286,11 @@ fn parse_bulk_string(buffer: BytesMut) -> Result<(Value, usize)> {
     Ok((Value::BulkString(String::from_utf8(buffer[bytes_consumed..end_of_bulk_str].to_vec())?), total_parsed))
 }
 
+
+// Voici ce qu on doit parse ::
+// b"$88\r\nREDIS0011\xfa\tredis-ver\x057.2.0\xfa\nredis-bits\xc0@\xfa\x05ctime\xc2m\x08\xbce\xfa\x08
+// used-mem\xc2\xb0\xc4\x10\0\xfa\x08aof-base\xc0\0\xff\xf0n;\xfe\xc0\xffZ\xa2*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\n123\r\n
+// *3\r\n$3\r\nSET\r\n$3\r\nbar\r\n$3\r\n456\r\n*3\r\n$3\r\nSET\r\n$3\r\nbaz\r\n$3\r\n789\r\n"
 fn parse_bulk_hex(buffer: BytesMut) -> Result<(Value, usize)> {
     let (bulk_hex_len, bytes_consumed) = if let Some((line, len)) = read_until_crlf(&buffer[1..]) {
         let bulk_hex_len = parse_int(line)?;
@@ -291,6 +300,7 @@ fn parse_bulk_hex(buffer: BytesMut) -> Result<(Value, usize)> {
     };
     let end_of_bulk_hex = bytes_consumed + bulk_hex_len as usize;
     let total_parsed = end_of_bulk_hex + 2;
+    println!("In parse_bulk_hex :: BUFFER = {:?} et total_parsed = {:?}", buffer, total_parsed);
 
     Ok((Value::BulkRawHexFile(buffer[bytes_consumed..end_of_bulk_hex].to_vec()), total_parsed))
 }
