@@ -17,7 +17,7 @@ pub async fn connect_to_master(master_host: Option<String>, master_port: Option<
 }
 
 
-pub fn configure_replica(args: Vec<Value>) -> Value {
+pub fn configure_replica(args: Vec<Value>, offset: usize) -> Value {
     if args.is_empty() { return Value::NullBulkString(); }
     let first_arg = args[0].clone();
     match first_arg {
@@ -38,7 +38,6 @@ pub fn configure_replica(args: Vec<Value>) -> Value {
                 if let Value::BulkString(second) = args[1].clone() {
                     match second.to_ascii_lowercase().as_str() {
                         "*" => {
-                            let offset = 0;
                             let values = vec![
                                 Value::BulkString("REPLCONF".to_string()),
                                 Value::BulkString("ACK".to_string()),
