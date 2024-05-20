@@ -362,6 +362,7 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
                         _ => {}
                     }
                 },
+                "ping" => {},
                 c => panic!("Cannot handle command {}", c),
             }
             offset += to_add;
