@@ -31,36 +31,28 @@ pub fn configure_replica(args: Vec<Value>) -> Value {
             }
             return Value::SimpleString("OK".to_string());
         },
-        Value::Array(v) | Value::ArrayBulkString(v) => {
-            if v.len() > 2 {
-                if let Value::BulkString(second) = v[1].clone() {
+        Value::BulkString(s) if s.to_ascii_lowercase().as_str() == "getack" => {
+            if args.len() > 2 {
+                if let Value::BulkString(second) = args[1].clone() {
                     match second.to_ascii_lowercase().as_str() {
-                        "getack" => {
-                            if let Value::BulkString(third) = v[2].clone() {
-                                match third.to_ascii_lowercase().as_str() {
-                                    "*" => {
-                                        let offset = 0;
-                                        let values = vec![
-                                            Value::BulkString("REPLCONF".to_string()),
-                                            Value::BulkString("ACK".to_string()),
-                                            Value::BulkString(format!("{}", offset)),
+                        "*" => {
+                            let offset = 0;
+                            let values = vec![
+                                Value::BulkString("REPLCONF".to_string()),
+                                Value::BulkString("ACK".to_string()),
+                                Value::BulkString(format!("{}", offset)),
 
-                                        ];
-                                        return Value::Array(values);
-                                    }
-                                    _ => {},
-                                }
-                            }
-
+                            ];
+                            return Value::Array(values);
                         },
-                        _ => { },
+                        _ => {},
                     }
                 }
 
             }
             Value::NullBulkString()
         },
-        _ => { Value::NullBulkString() }
+        v => { v }
     }
 }
 
