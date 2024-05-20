@@ -11,7 +11,6 @@ use nanoid::nanoid;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use thiserror::Error;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::{broadcast, mpsc};
 use tokio::sync::mpsc::{Receiver, Sender};
 use commands::server_info;
@@ -336,8 +335,6 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
         handshake_steps_done = handshake_steps(&mut handler, &mut handshake_steps_done, value.unwrap(), self_port, server_info_clone.clone()).await.unwrap();
 
     }
-    println!("ON EST ICI ON A PASSE LE HEX FILE");
-    println!("ICI le BUFFER : {:?}", handler.buffer);
 
     loop {
         let value = handler.read_value().await.unwrap();
