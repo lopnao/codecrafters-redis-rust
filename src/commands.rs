@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::sync::watch;
-use tokio::time::Instant;
+use tokio::time::{Instant, sleep};
 use crate::{RedisServer, unpack_bulk_str};
 use crate::resp::Value;
 
@@ -44,18 +45,35 @@ pub fn server_info(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>)
     Value::ArrayBulkString(res)
 }
 
-pub fn wait_or_replicas(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>, watch_replicas_count_rx: watch::Receiver<usize>) -> Value {
+pub async fn wait_or_replicas(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>, watch_replicas_count_rx: watch::Receiver<usize>) -> Value {
     println!("ON EST ICI : args = {:?}", args);
+    let default_time_to_sleep = Duration::from_millis(50);
+    let mut time_to_sleep = default_time_to_sleep;
     let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
     println!("ON EST ICI : args = {:?}", args);
     if let Some(number_of_replicas_str) = args.get(0) {
         if let Ok(number_of_replicas) = number_of_replicas_str.parse::<usize>() {
-            if let Some(time_to_sleep_str) = args.get(1) {
-                if let Ok(time_to_sleep) = time_to_sleep_str.parse::<usize>() {
-                    let starting_time = Instant::now();
-                    let mut receiver_count = watch_replicas_count_rx.borrow().clone();
-                    println!("ICI On a receiver_count = {:?}", receiver_count);
-                    return Value::SimpleInteger(0);
+            if let Some(timeout_time_str) = args.get(1) {
+                if let Ok(timeout_time_milli) = timeout_time_str.parse::<u64>() {
+                    let timeout_time = Instant::now().checked_add(Duration::from_millis(timeout_time_milli)).unwrap();
+                    let mut receiver_count = watch_replicas_count_rx.borrow().clone().checked_sub(2).unwrap();
+                    while number_of_replicas > receiver_count {
+                        let now = Instant::now();
+                        if now > timeout_time {
+                            receiver_count = watch_replicas_count_rx.borrow().clone().checked_sub(2).unwrap();
+                            break;
+                        }
+
+                        let duration_to_timeout = timeout_time - now;
+                        if duration_to_timeout < default_time_to_sleep {
+                            time_to_sleep = duration_to_timeout;
+                        }
+
+                        sleep(time_to_sleep).await;
+                        receiver_count = watch_replicas_count_rx.borrow().clone().checked_sub(2).unwrap();
+                    }
+
+                    return Value::SimpleInteger(receiver_count as i64);
                 }
             }
         }
