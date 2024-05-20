@@ -11,10 +11,11 @@ use nanoid::nanoid;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use thiserror::Error;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio::sync::mpsc::{Receiver, Sender};
 use commands::server_info;
 use db::KeyValueData;
+use crate::commands::wait_or_replicas;
 use crate::connect::{configure_replica, connect_to_master, psync, send_rdb_base64_to_hex};
 use crate::db::{data_get, data_set, key_expiry_thread};
 use crate::resp::RespHandler;
@@ -144,6 +145,8 @@ async fn main() {
     };
     let (broadcast_sender, broadcast_receiver) = broadcast::channel::<Value>(50);
     let (slave_tx, master_rx) = mpsc::channel::<Value>(50);
+    let (_watch_tx, watch_rx) = watch::channel(broadcast_receiver.resubscribe());
+    let (watch_replicas_count_tx, watch_replicas_count_rx) = watch::channel(broadcast_sender.receiver_count());
 
     let addr = {
         let temp_port = server_info.lock().unwrap().self_port.to_string();
@@ -210,9 +213,10 @@ async fn main() {
                     let data1 = Arc::clone(&data);
                     let exp_heap1 = Arc::clone(&exp_heap);
                     let slave_tx_clone = slave_tx.clone();
-                    let broadcast_receiver_subscribed = broadcast_receiver.resubscribe();
+                    let watch_rx_clone = watch_rx.clone();
+                    let watch_replicas_count_rx_clone = watch_replicas_count_rx.clone();
                     async move {
-                        handle_conn(stream, server_info_clone, data1, exp_heap1, slave_tx_clone, broadcast_receiver_subscribed).await
+                        handle_conn(stream, server_info_clone, data1, exp_heap1, slave_tx_clone, watch_rx_clone, watch_replicas_count_rx_clone).await
                     }
                  });
 
@@ -239,7 +243,8 @@ async fn propagate_to_replicas(mut master_receiver: Receiver<Value>, broadcast_s
 async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer>>,
                      data1: Arc<Mutex<HashMap<String, KeyValueData>>>,
                      exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>,
-                     slave_tx: Sender<Value>, mut broadcast_receiver: broadcast::Receiver<Value>) {
+                     slave_tx: Sender<Value>, watch_rx: watch::Receiver<broadcast::Receiver<Value>>,
+                     watch_replicas_count_rx_clone: watch::Receiver<usize>) {
     let mut handler = resp::RespHandler::new(stream);
     let mut to_replicate = false;
     println!("Starting read loop");
@@ -279,6 +284,12 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     to_replicate = true;
                     Value::SimpleString("OK".to_string())
                 },
+                "wait" => {
+                    let server_info_clone2 = server_info_clone.clone();
+                    let mut watch_replicas_count_rx_clone = watch_replicas_count_rx_clone.clone();
+                    let res = wait_or_replicas(server_info_clone2, args, watch_replicas_count_rx_clone);
+                    res
+                }
                 c => panic!("Cannot handle command {}", c),
 
             }
@@ -298,6 +309,8 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
 
     // Propagate to Replica if the connection is to a Replica node :
     if to_replicate {
+        let mut broadcast_receiver = watch_rx.borrow().resubscribe();
+
         loop {
             while let Ok(v) = broadcast_receiver.recv().await {
                 let new_v = v.deserialize_bulkstring();

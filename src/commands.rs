@@ -1,4 +1,6 @@
 use std::sync::{Arc, Mutex};
+use tokio::sync::watch;
+use tokio::time::Instant;
 use crate::{RedisServer, unpack_bulk_str};
 use crate::resp::Value;
 
@@ -8,7 +10,7 @@ pub fn server_info(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>)
     let mut res = vec![];
     let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
     for arg in args {
-        match arg.as_str() {
+        match arg.to_ascii_lowercase().as_str() {
             "replication" => {
                 let is_master = { server_info_clone.lock().unwrap().is_master };
                 let role = if is_master { "master" } else { "slave" };
@@ -40,6 +42,25 @@ pub fn server_info(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>)
     }
 
     Value::ArrayBulkString(res)
+}
+
+pub fn wait_or_replicas(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>, watch_replicas_count_rx: watch::Receiver<usize>) -> Value {
+    println!("ON EST ICI : args = {:?}", args);
+    let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
+    println!("ON EST ICI : args = {:?}", args);
+    if let Some(number_of_replicas_str) = args.get(0) {
+        if let Ok(number_of_replicas) = number_of_replicas_str.parse::<usize>() {
+            if let Some(time_to_sleep_str) = args.get(1) {
+                if let Ok(time_to_sleep) = time_to_sleep_str.parse::<usize>() {
+                    let starting_time = Instant::now();
+                    let mut receiver_count = watch_replicas_count_rx.borrow().clone();
+                    println!("ICI On a receiver_count = {:?}", receiver_count);
+                    return Value::SimpleInteger(0);
+                }
+            }
+        }
+    }
+    Value::NullBulkString()
 }
 
 
