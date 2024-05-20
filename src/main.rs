@@ -480,6 +480,9 @@ fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
         Value::NullBulkString() => {
             Err(anyhow::anyhow!("NullBulkString value response is todo!"))
         }
+        Value::SimpleInteger(_i) => {
+            Err(anyhow::anyhow!("SimpleInteger value response is todo!"))
+        }
         Value::BulkRawHexFile(_s) => {
             Err(anyhow::anyhow!("BulkStringFile value response is todo!"))
         }
