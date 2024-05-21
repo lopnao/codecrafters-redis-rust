@@ -127,8 +127,7 @@ impl Value {
             },
             Value::Array(a) => format!("{}", a.iter().fold(format!("*{}\r\n", a.len()), |acc, s| format!("{}{}", acc, s.clone().serialize()),)),
             Value::SimpleInteger(i) => format!(":{}\r\n", i),
-            Value::BulkRawHexFile(_v)    => "".to_string(),
-            // _ => "".to_string(),
+            _ => "".to_string(),
         }
     }
 
