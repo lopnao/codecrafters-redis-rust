@@ -1,10 +1,10 @@
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration};
 use tokio::sync::watch;
-use tokio::time::Instant;
+use tokio::time::{Instant, timeout};
 use crate::{RedisServer, unpack_bulk_str};
-use crate::resp::Value;
+use crate::resp::{RespHandler, Value};
 
 
 
@@ -46,38 +46,32 @@ pub fn server_info(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>)
     Value::ArrayBulkString(res)
 }
 
-pub fn wait_or_replicas(args: Vec<Value>, watch_replicas_count_rx: watch::Receiver<usize>) -> Value {
-    println!("ON EST ICI : args = {:?}", args);
-    let default_time_to_sleep = Duration::from_millis(50);
-    let mut time_to_sleep = default_time_to_sleep;
+
+pub async fn wait_or_replicas(args: Vec<Value>, watch_replicas_count_rx: watch::Receiver<usize>) -> Value {
     let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
-    println!("ON EST ICI : args = {:?}", args);
+    let now_instant = Instant::now();
     if let Some(number_of_replicas_str) = args.get(0) {
         if let Ok(number_of_replicas) = number_of_replicas_str.parse::<usize>() {
             if let Some(timeout_time_str) = args.get(1) {
                 if let Ok(timeout_time_milli) = timeout_time_str.parse::<u64>() {
-
-                    let timeout_time = Instant::now().checked_add(Duration::from_millis(timeout_time_milli)).unwrap();
-                    let mut receiver_count = watch_replicas_count_rx.borrow().clone();
-                    println!("ICI ON VA ATTENDRE {:?} // ON A {:?} GOOD BOTS", timeout_time_milli, receiver_count);
-                    println!("NOW = {:?} et TIMEOUT = {:?}", Instant::now(), timeout_time);
-                    while number_of_replicas > receiver_count {
-                        let now = Instant::now();
-                        if now > timeout_time {
-                            receiver_count = watch_replicas_count_rx.borrow().clone();
-                            break;
-                        }
-
-                        let duration_to_timeout = timeout_time - now;
-                        if duration_to_timeout < default_time_to_sleep {
-                            time_to_sleep = duration_to_timeout;
-                        }
-
-                        sleep(time_to_sleep);
-                        receiver_count = watch_replicas_count_rx.borrow().clone();
+                    let mut replica_count;
+                    let timeout_duration = Duration::from_millis(500);
+                    let timeout_instant = now_instant.clone() + timeout_duration;
+                    {
+                        replica_count = watch_replicas_count_rx.borrow().clone();
                     }
-                    println!("On envoie la valeur = {:?} à {:?}", receiver_count, Instant::now());
-                    return Value::SimpleInteger(receiver_count as i64);
+                    println!("NOW is : {:?} // repl_count = {:?} // Waiting for max {:?} ms", Instant::now(), replica_count, timeout_time_milli);
+                    while Instant::now() < timeout_instant || replica_count < number_of_replicas {
+                        if let Ok(_) = timeout(Duration::from_millis(500), watch_replicas_count_rx.clone().changed()).await {
+                            {
+                                replica_count = watch_replicas_count_rx.borrow().clone();
+                            }
+                        }
+                        // println!("NOW2 is : {:?} // repl_count = {:?}", Instant::now(), replica_count);
+                    }
+                    println!("ICI On envoie la valeur = {:?} à {:?}", replica_count, Instant::now());
+                    println!("On a mis Duration = {:?}", now_instant - Instant::now());
+                    return Value::SimpleInteger(replica_count as i64);
                 }
             }
         }
