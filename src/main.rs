@@ -2,10 +2,11 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::{io, thread};
+use std::time::Duration;
 use resp::Value;
 use tokio::net::{TcpListener, TcpStream};
 use anyhow::Result;
-use tokio::time::Instant;
+use tokio::time::{Instant, timeout};
 use clap::Parser;
 use nanoid::nanoid;
 use rand::distributions::Alphanumeric;
@@ -19,7 +20,7 @@ use crate::commands::wait_or_replicas;
 use crate::connect::{configure_replica, connect_to_master, psync, send_rdb_base64_to_hex};
 use crate::db::{data_get, data_set, key_expiry_thread};
 use crate::resp::{CommandRedis, RespHandler};
-use crate::resp::CommandRedis::UpdateReplicasCount;
+use crate::resp::CommandRedis::{GoodAckFromReplica, UpdateReplicasCount};
 
 mod resp;
 mod db;
@@ -27,6 +28,7 @@ mod structs;
 mod connect;
 mod commands;
 
+const TIMEOUT_FROM_CHANNEL: u64 = 10;
 const EXPIRY_LOOP_TIME: u64 = 50; // 50 milli seconds
 const EMPTY_RDB_FILE: &str = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
 
@@ -234,29 +236,47 @@ async fn main() {
 async fn propagate_to_replicas(mut master_receiver: Receiver<Value>,
                                broadcast_sender: broadcast::Sender<Value>,
                                watch_replicas_count_tx: watch::Sender<usize>) {
+
+    // Create FnOnce(&mut usize) to modify and notify only if change
+    let mut good_ack = 0;
+    let modify_count = move | count: &mut usize | {
+        if *count != good_ack {
+            *count = good_ack;
+            return true;
+        }
+        false
+    };
+
+
     loop {
 
         while let Some(value_to_propagate) = master_receiver.recv().await {
             if let Value::SimpleCommand(command) = &value_to_propagate {
-
                 match command {
                     CommandRedis::UpdateReplicasCount => {
-                        // Create FnOnce(&mut usize) to modify and notify only if change
-                        let modify_count = | count: &mut usize | {
-                            if *count != broadcast_sender.receiver_count() {
-                                *count = broadcast_sender.receiver_count();
-                                return true;
-                            }
-                            false
-                        };
                         watch_replicas_count_tx.send_if_modified(modify_count);
                         println!("Received notification to update replicas count!");
                     },
                     _ => {},
                 }
             } else {
+                let count_at_start = broadcast_sender.receiver_count();
+                good_ack = 0;
                 println!("Propagating : Value = {:?}", value_to_propagate.clone());
                 broadcast_sender.send(value_to_propagate).unwrap();
+
+                for _i in 0..count_at_start {
+                    if let Ok(Some(Value::SimpleCommand(cmd))) = timeout(Duration::from_millis(TIMEOUT_FROM_CHANNEL),
+                                                                     master_receiver.recv()).await {
+                        if let GoodAckFromReplica = cmd {
+                            good_ack += 1;
+                            println!("GOOD BOT!");
+                        }
+                    }
+                }
+                // Updating the count with good ack only replicas
+                watch_replicas_count_tx.send_if_modified(modify_count);
+
             }
         }
     }
@@ -348,14 +368,15 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                 let master_offset_to_add_after = handler.
                     write_value_and_count(ack_command_to_check.clone()).await.unwrap();
 
-                if let Some(value) = handler.read_value().await.unwrap() {
+                if let Ok(Ok(Some(value))) = timeout(Duration::from_millis(10), handler.read_value())
+                    .await {
                     match value {
                         Value::Array(v) => {
                             if let Some(Value::BulkString(s)) = v.get(2) {
                                 let replica_offset = s.parse::<usize>().unwrap();
                                 if replica_offset == master_offset {
-                                    // ICI tout va bien replica est sync
-                                    // todo
+                                    println!("Received the good offset from replica");
+                                    slave_tx.send(Value::SimpleCommand(GoodAckFromReplica)).await.unwrap();
                                 }
 
                             }
