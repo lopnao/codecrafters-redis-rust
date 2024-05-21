@@ -269,6 +269,12 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                      watch_replicas_count_rx_clone: watch::Receiver<usize>) {
     let mut handler = resp::RespHandler::new(stream);
     let mut to_replicate = false;
+    let mut master_offset = 0_usize;
+    let ack_command_to_check = Value::Array(vec![
+        Value::BulkString("REPLCONF".to_string()),
+        Value::BulkString("GETACK".to_string()),
+        Value::BulkString("*".to_string()),
+    ]);
     println!("Starting read loop");
 
     loop {
@@ -308,10 +314,9 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     Value::SimpleString("OK".to_string())
                 },
                 "wait" => {
-                    let slavetx_tx_clone = slave_tx.clone();
                     let watch_replicas_count_rx_clone = watch_replicas_count_rx_clone.clone();
                     slave_tx.send(Value::SimpleCommand(UpdateReplicasCount)).await.unwrap();
-                    let res = wait_or_replicas(slavetx_tx_clone, args, watch_replicas_count_rx_clone);
+                    let res = wait_or_replicas(args, watch_replicas_count_rx_clone);
                     res
                 }
                 c => panic!("Cannot handle command {}", c),
@@ -339,7 +344,27 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
             while let Ok(v) = broadcast_receiver.recv().await {
                 let new_v = v.deserialize_bulkstring();
                 println!("Je vais envoyer : {:?} à {:?}", new_v, handler.client_addr().clone());
-                handler.write_value(new_v).await.unwrap();
+                master_offset += handler.write_value_and_count(new_v).await.unwrap();
+                let master_offset_to_add_after = handler.
+                    write_value_and_count(ack_command_to_check.clone()).await.unwrap();
+
+                if let Some(value) = handler.read_value().await.unwrap() {
+                    match value {
+                        Value::Array(v) => {
+                            if let Some(Value::BulkString(s)) = v.get(2) {
+                                let replica_offset = s.parse::<usize>().unwrap();
+                                if replica_offset == master_offset {
+                                    // ICI tout va bien replica est sync
+                                    // todo
+                                }
+
+                            }
+                        },
+                        _ => {}
+
+                    }
+                }
+                master_offset += master_offset_to_add_after;
             }
         }
     }

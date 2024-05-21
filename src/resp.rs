@@ -240,6 +240,27 @@ impl RespHandler {
 
     }
 
+    pub async fn write_value_and_count(&mut self, value: Value) -> Result<(usize)> {
+        let mut new_offset = 0;
+        match value {
+            Value::BulkRawHexFile(mut v) => {
+                let mut enrobage = format!("${}\r\n", v.len()).as_bytes().to_vec();
+                enrobage.append(&mut v);
+                let to_send = enrobage.as_slice();
+                new_offset = to_send.len();
+                self.stream.write_all(to_send).await?;
+            }
+            value   => {
+                let to_send = value.serialize().as_bytes();
+                new_offset = to_send.len();
+                self.stream.write_all(to_send).await?;
+            }
+        }
+
+        Ok((new_offset))
+
+    }
+
 }
 
 fn parse_message(buffer: BytesMut) -> Result<(Value, usize)> {
