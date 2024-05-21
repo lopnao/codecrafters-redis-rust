@@ -250,6 +250,7 @@ async fn propagate_to_replicas(mut master_receiver: Receiver<Value>,
                             false
                         };
                         watch_replicas_count_tx.send_if_modified(modify_count);
+                        println!("Received notification to update replicas count!");
                     },
                     _ => {},
                 }
@@ -303,11 +304,12 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     println!("[INFO] - Sending RDB File to Replica");
                     handler.write_value(send_rdb_base64_to_hex(EMPTY_RDB_FILE)).await.unwrap();
                     to_replicate = true;
+                    slave_tx.send(Value::SimpleCommand(UpdateReplicasCount)).await.unwrap();
                     Value::SimpleString("OK".to_string())
                 },
                 "wait" => {
                     let server_info_clone2 = server_info_clone.clone();
-                    let mut watch_replicas_count_rx_clone = watch_replicas_count_rx_clone.clone();
+                    let watch_replicas_count_rx_clone = watch_replicas_count_rx_clone.clone();
                     let res = wait_or_replicas(server_info_clone2, args, watch_replicas_count_rx_clone);
                     res
                 }
@@ -372,8 +374,6 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
     // Start the count of offset bytes of propagated commands from master node
     let mut offset = 0;
 
-    // Notify master node to update the replicas count
-    handler.write_value(Value::SimpleCommand(UpdateReplicasCount)).await.unwrap();
 
 
     loop {

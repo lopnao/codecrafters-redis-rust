@@ -46,7 +46,7 @@ pub fn server_info(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>)
     Value::ArrayBulkString(res)
 }
 
-pub fn wait_or_replicas(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>, watch_replicas_count_rx: watch::Receiver<usize>) -> Value {
+pub fn wait_or_replicas(_server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>, watch_replicas_count_rx: watch::Receiver<usize>) -> Value {
     println!("ON EST ICI : args = {:?}", args);
     let default_time_to_sleep = Duration::from_millis(50);
     let mut time_to_sleep = default_time_to_sleep;

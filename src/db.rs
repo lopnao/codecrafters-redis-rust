@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::time::Instant;
 use std::time::Duration;
-use tokio::sync::watch;
 use crate::resp::Value;
 use crate::unpack_bulk_str;
 
