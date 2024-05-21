@@ -23,6 +23,7 @@ pub enum CommandRedis {
     AddReplicas,
     DelReplicas,
     UpdateReplicasCount,
+    GoodAckFromReplica
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -240,8 +241,8 @@ impl RespHandler {
 
     }
 
-    pub async fn write_value_and_count(&mut self, value: Value) -> Result<(usize)> {
-        let mut new_offset = 0;
+    pub async fn write_value_and_count(&mut self, value: Value) -> Result<usize> {
+        let mut new_offset= 0;
         match value {
             Value::BulkRawHexFile(mut v) => {
                 let mut enrobage = format!("${}\r\n", v.len()).as_bytes().to_vec();
@@ -251,13 +252,14 @@ impl RespHandler {
                 self.stream.write_all(to_send).await?;
             }
             value   => {
-                let to_send = value.serialize().as_bytes();
+                let to_send = value.serialize();
+                let to_send = to_send.as_bytes();
                 new_offset = to_send.len();
                 self.stream.write_all(to_send).await?;
             }
         }
 
-        Ok((new_offset))
+        Ok(new_offset)
 
     }
 
