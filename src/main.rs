@@ -18,7 +18,8 @@ use db::KeyValueData;
 use crate::commands::wait_or_replicas;
 use crate::connect::{configure_replica, connect_to_master, psync, send_rdb_base64_to_hex};
 use crate::db::{data_get, data_set, key_expiry_thread};
-use crate::resp::RespHandler;
+use crate::resp::{CommandRedis, RespHandler};
+use crate::resp::CommandRedis::UpdateReplicasCount;
 
 mod resp;
 mod db;
@@ -196,7 +197,7 @@ async fn main() {
     // Spawning a thread on master node to propagate Values to replica servers
     if !is_slave {
         tokio::spawn(async move {
-            propagate_to_replicas(master_rx, broadcast_sender).await
+            propagate_to_replicas(master_rx, broadcast_sender, watch_replicas_count_tx).await
         });
     }
 
@@ -230,14 +231,33 @@ async fn main() {
     }
 }
 
-async fn propagate_to_replicas(mut master_receiver: Receiver<Value>, broadcast_sender: broadcast::Sender<Value>) {
+async fn propagate_to_replicas(mut master_receiver: Receiver<Value>,
+                               broadcast_sender: broadcast::Sender<Value>,
+                               watch_replicas_count_tx: watch::Sender<usize>) {
     loop {
 
         while let Some(value_to_propagate) = master_receiver.recv().await {
-            println!("Propagating : Value = {:?}", value_to_propagate.clone());
-            broadcast_sender.send(value_to_propagate).unwrap();
-        }
+            if let Value::SimpleCommand(command) = &value_to_propagate {
 
+                match command {
+                    CommandRedis::UpdateReplicasCount => {
+                        // Create FnOnce(&mut usize) to modify and notify only if change
+                        let modify_count = | count: &mut usize | {
+                            if *count != broadcast_sender.receiver_count() {
+                                *count = broadcast_sender.receiver_count();
+                                return true;
+                            }
+                            false
+                        };
+                        watch_replicas_count_tx.send_if_modified(modify_count);
+                    },
+                    _ => {},
+                }
+            } else {
+                println!("Propagating : Value = {:?}", value_to_propagate.clone());
+                broadcast_sender.send(value_to_propagate).unwrap();
+            }
+        }
     }
 }
 
@@ -347,10 +367,14 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
             handler.read_value().await.unwrap()
         };
         handshake_steps_done = handshake_steps(&mut handler, &mut handshake_steps_done, value.unwrap(), self_port, server_info_clone.clone()).await.unwrap();
-
     }
 
+    // Start the count of offset bytes of propagated commands from master node
     let mut offset = 0;
+
+    // Notify master node to update the replicas count
+    handler.write_value(Value::SimpleCommand(UpdateReplicasCount)).await.unwrap();
+
 
     loop {
         let value = handler.read_value_and_count().await.unwrap();
@@ -486,6 +510,9 @@ fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
         }
         Value::BulkRawHexFile(_s) => {
             Err(anyhow::anyhow!("BulkStringFile value response is todo!"))
+        }
+        Value::SimpleCommand(_s) => {
+            Err(anyhow::anyhow!("SimpleCommand value response is todo!"))
         }
         Value::Array(a) => {
             Ok((unpack_bulk_str(a[0].clone())?, a[1..].to_vec()))
