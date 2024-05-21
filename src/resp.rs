@@ -12,6 +12,16 @@ pub enum Value {
     ArrayBulkString(Vec<Value>),
     Array(Vec<Value>),
     SimpleInteger(i64),
+    SimpleCommand(CommandRedis),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum CommandRedis {
+    Wait(usize, usize),
+    Info,
+    AddReplicas,
+    DelReplicas,
+    UpdateReplicasCount,
 }
 
 #[derive(Clone, Debug, PartialEq)]
