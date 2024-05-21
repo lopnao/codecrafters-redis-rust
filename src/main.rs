@@ -308,9 +308,10 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     Value::SimpleString("OK".to_string())
                 },
                 "wait" => {
-                    let server_info_clone2 = server_info_clone.clone();
+                    let slavetx_tx_clone = slave_tx.clone();
                     let watch_replicas_count_rx_clone = watch_replicas_count_rx_clone.clone();
-                    let res = wait_or_replicas(server_info_clone2, args, watch_replicas_count_rx_clone);
+                    slave_tx.send(Value::SimpleCommand(UpdateReplicasCount)).await.unwrap();
+                    let res = wait_or_replicas(slavetx_tx_clone, args, watch_replicas_count_rx_clone);
                     res
                 }
                 c => panic!("Cannot handle command {}", c),
