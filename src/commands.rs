@@ -56,12 +56,15 @@ pub fn wait_or_replicas(args: Vec<Value>, watch_replicas_count_rx: watch::Receiv
         if let Ok(number_of_replicas) = number_of_replicas_str.parse::<usize>() {
             if let Some(timeout_time_str) = args.get(1) {
                 if let Ok(timeout_time_milli) = timeout_time_str.parse::<u64>() {
+
                     let timeout_time = Instant::now().checked_add(Duration::from_millis(timeout_time_milli)).unwrap();
-                    let mut receiver_count = watch_replicas_count_rx.borrow().clone().checked_sub(2).unwrap();
+                    let mut receiver_count = watch_replicas_count_rx.borrow().clone();
+                    println!("ICI ON VA ATTENDRE {:?} // ON A {:?} GOOD BOTS", timeout_time_milli, receiver_count);
+                    println!("NOW = {:?} et TIMEOUT = {:?}", Instant::now(), timeout_time);
                     while number_of_replicas > receiver_count {
                         let now = Instant::now();
                         if now > timeout_time {
-                            receiver_count = watch_replicas_count_rx.borrow().clone().checked_sub(2).unwrap();
+                            receiver_count = watch_replicas_count_rx.borrow().clone();
                             break;
                         }
 
@@ -71,9 +74,9 @@ pub fn wait_or_replicas(args: Vec<Value>, watch_replicas_count_rx: watch::Receiv
                         }
 
                         sleep(time_to_sleep);
-                        receiver_count = watch_replicas_count_rx.borrow().clone().checked_sub(2).unwrap();
+                        receiver_count = watch_replicas_count_rx.borrow().clone();
                     }
-
+                    println!("On envoie la valeur = {:?} à {:?}", receiver_count, Instant::now());
                     return Value::SimpleInteger(receiver_count as i64);
                 }
             }

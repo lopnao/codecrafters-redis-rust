@@ -28,7 +28,7 @@ mod structs;
 mod connect;
 mod commands;
 
-const TIMEOUT_FROM_CHANNEL: u64 = 10;
+const TIMEOUT_FROM_CHANNEL: u64 = 5;
 const EXPIRY_LOOP_TIME: u64 = 50; // 50 milli seconds
 const EMPTY_RDB_FILE: &str = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
 
@@ -149,7 +149,7 @@ async fn main() {
     let (broadcast_sender, broadcast_receiver) = broadcast::channel::<Value>(50);
     let (slave_tx, master_rx) = mpsc::channel::<Value>(50);
     let (_watch_tx, watch_rx) = watch::channel(broadcast_receiver.resubscribe());
-    let (watch_replicas_count_tx, watch_replicas_count_rx) = watch::channel(broadcast_sender.receiver_count());
+    let (watch_replicas_count_tx, watch_replicas_count_rx) = watch::channel(0);
 
     let addr = {
         let temp_port = server_info.lock().unwrap().self_port.to_string();
@@ -257,23 +257,19 @@ async fn propagate_to_replicas(mut master_receiver: Receiver<Value>,
                         watch_replicas_count_tx.send_if_modified(modify_count);
                         println!("Received notification to update replicas count!");
                     },
+                    Value::SimpleCommand(GoodAckFromReplica) => {
+                        good_ack += 1;
+                        println!("GOOD BOT!");
+                        watch_replicas_count_tx.send_if_modified(modify_count);
+                    }
                     _ => {},
                 }
             } else {
-                let count_at_start = broadcast_sender.receiver_count();
                 good_ack = 0;
                 println!("Propagating : Value = {:?}", value_to_propagate.clone());
                 broadcast_sender.send(value_to_propagate).unwrap();
 
-                for _i in 0..count_at_start {
-                    if let Ok(Some(Value::SimpleCommand(cmd))) = timeout(Duration::from_millis(TIMEOUT_FROM_CHANNEL),
-                                                                     master_receiver.recv()).await {
-                        if let GoodAckFromReplica = cmd {
-                            good_ack += 1;
-                            println!("GOOD BOT!");
-                        }
-                    }
-                }
+                println!("Updating replicad_good_count with value of {}", good_ack);
                 // Updating the count with good ack only replicas
                 watch_replicas_count_tx.send_if_modified(modify_count);
 
@@ -370,14 +366,18 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
 
                 if let Ok(Ok(Some(value))) = timeout(Duration::from_millis(10), handler.read_value())
                     .await {
+                    println!("Recu de la part de replica : {:?}", value);
+                    println!("Je m'attends à master_offset = {:?}", master_offset);
                     match value {
-                        Value::Array(v) => {
+                        Value::ArrayBulkString(v) => {
                             if let Some(Value::BulkString(s)) = v.get(2) {
                                 let replica_offset = s.parse::<usize>().unwrap();
+                                println!("Apres parse, on a replica_offset = {:?}", replica_offset);
                                 if replica_offset == master_offset {
                                     println!("Received the good offset from replica");
                                     slave_tx.send(Value::SimpleCommand(GoodAckFromReplica)).await.unwrap();
                                 }
+                                println!("Received the bad offset from replica : replica_offset = {} // master_offset = {}", replica_offset, master_offset);
 
                             }
                         },
