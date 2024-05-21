@@ -1,11 +1,9 @@
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
-use tokio::sync::mpsc::Sender;
 use tokio::sync::watch;
 use tokio::time::Instant;
 use crate::{RedisServer, unpack_bulk_str};
-use crate::resp::CommandRedis::UpdateReplicasCount;
 use crate::resp::Value;
 
 
@@ -48,7 +46,7 @@ pub fn server_info(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>)
     Value::ArrayBulkString(res)
 }
 
-pub fn wait_or_replicas(slave_tx: Sender<Value>, args: Vec<Value>, watch_replicas_count_rx: watch::Receiver<usize>) -> Value {
+pub fn wait_or_replicas(args: Vec<Value>, watch_replicas_count_rx: watch::Receiver<usize>) -> Value {
     println!("ON EST ICI : args = {:?}", args);
     let default_time_to_sleep = Duration::from_millis(50);
     let mut time_to_sleep = default_time_to_sleep;
