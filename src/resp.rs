@@ -172,7 +172,7 @@ impl RespHandler {
         }
     }
 
-    pub fn client_addr(&self) -> String {
+    pub fn _client_addr(&self) -> String {
         return format!("{:?}",self.stream.peer_addr())
     }
 
@@ -242,6 +242,7 @@ impl RespHandler {
     }
 
     pub async fn write_value_and_count(&mut self, value: Value) -> Result<usize> {
+        #[allow(unused_assignments)]
         let mut new_offset= 0;
         match value {
             Value::BulkRawHexFile(mut v) => {
@@ -267,7 +268,7 @@ impl RespHandler {
 
 fn parse_message(buffer: BytesMut) -> Result<(Value, usize)> {
 
-    println!("TEMP buffer = {:?}", buffer);
+    //println!("TEMP buffer = {:?}", buffer);
     match buffer[0] as char {
         '+' => parse_simple_string(buffer),
         '*' => parse_array(buffer),
@@ -278,7 +279,7 @@ fn parse_message(buffer: BytesMut) -> Result<(Value, usize)> {
 
 fn parse_hexdump(buffer: BytesMut) -> Result<(Value, usize)> {
 
-    println!("TEMP buffer = {:?}", buffer);
+    //println!("TEMP buffer = {:?}", buffer);
     match buffer[0] as char {
         '$' => parse_bulk_hex(buffer),
         _ => Err(anyhow::anyhow!("Not a known value type {:?}", buffer)),

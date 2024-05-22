@@ -27,7 +27,7 @@ mod structs;
 mod connect;
 mod commands;
 
-const TIMEOUT_FROM_CHANNEL: u64 = 350;
+const _TIMEOUT_FROM_CHANNEL: u64 = 350;
 const EXPIRY_LOOP_TIME: u64 = 50; // 50 milli seconds
 const EMPTY_RDB_FILE: &str = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
 
@@ -279,11 +279,9 @@ async fn propagate_to_replicas(mut master_receiver: Receiver<Value>,
                     },
                     GoodAckFromReplica => {
                         good_ack += 1;
-                        println!("GOOD BOT!");
-                        println!("Updating replicad_good_count with value of {}", good_ack);
-                        println!("Time is {:?}", Instant::now());
+                        //println!("Updating replicas_good_count : incrementing +1");
                         watch_replicas_count_tx.send_if_modified(count_add);
-                        println!("on a maintenant count_watch = {:?}", watch_replicas_count_tx.borrow().clone());
+                        //println!("on a maintenant count_watch = {:?}", watch_replicas_count_tx.borrow().clone());
                     }
                     _ => {},
                 }
@@ -377,13 +375,11 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
             handler.write_value(response).await.unwrap();
         }
     }
-    let mut master_offset_to_add_after = 0;
     // Propagate to Replica if the connection is to a Replica node :
     if to_replicate {
         let mut broadcast_receiver = { watch_rx.borrow().resubscribe() };
 
         loop {
-            println!("Dans le BUFFER AVANT LE SELECT : {:?}", handler.buffer);
             tokio::select! {
                 Ok(v) = broadcast_receiver.recv() => {
                     match v {
@@ -395,11 +391,9 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
 
                         },
                         Value::SimpleCommand(UpdateReplicasCount) => {
-                            println!("Je suis ici !");
                             master_offset.1 = handler.
                                 write_value_and_count(ack_command_to_check.clone()).await.unwrap();
-                            println!("Envoyé le ACK : en attente de réponse avec valeur = {:?}", master_offset);
-                            println!("Dans le BUFFER ACTUELLEMENT : {:?}", handler.buffer);
+                            //println!("Envoyé le ACK : en attente de réponse avec valeur = {:?}", master_offset);
                         }
                         a => {
                             println!("ICI : a = {:?}", a);
@@ -432,64 +426,11 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                             println!("ICI valllllue = {:?}", vallllue);
                         },
                     }
-                    println!("Dans le BUFFER APRES : {:?}", handler.buffer);
                 }
             }
         }
     }
 }
-
-
-
-//
-//             while let Ok(v) = broadcast_receiver.recv().await {
-//                 let new_v_to_send = v.clone();
-//                 let new_v = v.deserialize_bulkstring();
-//                 match new_v_to_send {
-//                     Value::ArrayBulkString(v) => {
-//                         master_offset += handler.write_value_and_count(new_v).await.unwrap();
-//                         let master_offset_to_add_after = handler.
-//                             write_value_and_count(ack_command_to_check.clone()).await.unwrap();
-//
-//
-//                         println!("Envoyé le ACK : en attente de réponse avec valeur = {:?}", master_offset);
-//                         println!("Dans le BUFFER ACTUELLEMENT : {:?}", handler.buffer);
-//                         if let Ok(Ok(Some(val))) = timeout(Duration::from_millis(TIMEOUT_FROM_CHANNEL), handler.read_value()).await {
-//                             match val {
-//                                 Value::ArrayBulkString(v) => {
-//                                     println!("ICI v = {:?}", v);
-//                                     if let Some(Value::BulkString(s1)) = v.get(1) {
-//                                         if s1.to_ascii_lowercase().as_str() == "ack" {
-//                                             if let Some(Value::BulkString(s2)) =v.get(2) {
-//                                                 if let Ok(replica_offset) = s2.parse::<usize>() {
-//                                                     println!("Apres parse, on a replica_offset = {:?}", replica_offset);
-//                                                     if replica_offset == master_offset {
-//                                                         println!("Received the good offset from replica");
-//                                                         slave_tx.send(Value::SimpleCommand(GoodAckFromReplica)).await.unwrap();
-//                                                     } else {
-//                                                         println!("Received the bad offset from replica : replica_offset = {} // master_offset = {}", replica_offset, master_offset);
-//                                                     }
-//                                                 }
-//                                             }
-//                                         }
-//                                     }
-//                                 },
-//                                 vallllue => {
-//                                     println!("ICI valllllue = {:?}", vallllue);
-//                                 }
-//                             }
-//                         }
-//                         println!("Dans le BUFFER APRES : {:?}", handler.buffer);
-//                         master_offset += master_offset_to_add_after;
-//                     },
-//                     a => {
-//                         println!("ICI : a = {:?}", a);
-//                     },
-//                 }
-//             }
-//         }
-//     }
-// }
 
 #[allow(unused_variables)]
 async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: Arc<Mutex<RedisServer>>,
@@ -539,7 +480,6 @@ async fn handle_conn_to_master(stream_to_master: TcpStream, server_info_clone: A
                 },
                 "replconf" => {
                     let res = configure_replica(args, offset);
-                    println!("ICI : res = {:?}", res);
                     match res {
                         Value::Array(_) => {
                             handler.write_value(res).await.unwrap();
