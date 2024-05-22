@@ -45,7 +45,7 @@ pub fn server_info(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>)
 }
 
 
-pub async fn wait_or_replicas(args: Vec<Value>, watch_replicas_count_rx: watch::Receiver<usize>) -> Value {
+pub async fn wait_or_replicas(args: Vec<Value>, mut watch_replicas_count_rx: watch::Receiver<usize>) -> Value {
     let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
     let now_instant = Instant::now();
     if let Some(number_of_replicas_str) = args.get(0) {
@@ -53,21 +53,22 @@ pub async fn wait_or_replicas(args: Vec<Value>, watch_replicas_count_rx: watch::
             if let Some(timeout_time_str) = args.get(1) {
                 if let Ok(timeout_time_milli) = timeout_time_str.parse::<u64>() {
                     let mut replica_count;
-                    let timeout_duration = Duration::from_millis(500);
+                    let timeout_duration = Duration::from_millis(timeout_time_milli);
                     let timeout_instant = now_instant.clone() + timeout_duration;
                     {
                         replica_count = watch_replicas_count_rx.borrow().clone();
                     }
                     println!("NOW is : {:?} // repl_count = {:?} // Waiting for max {:?} ms", Instant::now(), replica_count, timeout_time_milli);
-                    while Instant::now() < timeout_instant || replica_count < number_of_replicas {
+                    while Instant::now() < timeout_instant && replica_count < number_of_replicas {
+                        let new_duration_to_timeout_time = timeout_instant - Instant::now();
                         //todo enlever ce sleep
-                        sleep(Duration::from_millis(80)).await;
-                        if let Ok(_) = timeout(Duration::from_millis(500), watch_replicas_count_rx.clone().changed()).await {
+                        // sleep(Duration::from_millis(80)).await;
+                        if let Ok(_) = timeout(new_duration_to_timeout_time, watch_replicas_count_rx.clone().changed()).await {
                             {
-                                replica_count = watch_replicas_count_rx.borrow().clone();
+                                replica_count = *watch_replicas_count_rx.borrow_and_update();
                             }
+                            println!("OL // {:?}", new_duration_to_timeout_time);
                         }
-                        // println!("NOW2 is : {:?} // repl_count = {:?}", Instant::now(), replica_count);
                     }
                     println!("ICI On envoie la valeur = {:?} à {:?}", replica_count, Instant::now());
                     println!("On a mis Duration = {:?}", now_instant - Instant::now());
