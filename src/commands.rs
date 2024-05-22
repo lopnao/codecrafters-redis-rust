@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 use tokio::sync::watch;
-use tokio::time::{Instant, timeout, Duration, sleep};
+use tokio::time::{Instant, timeout, Duration};
 use crate::{RedisServer, unpack_bulk_str};
 use crate::resp::Value;
 
