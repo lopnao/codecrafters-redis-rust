@@ -15,7 +15,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::sync::mpsc::{Receiver, Sender};
 use commands::server_info;
 use db::KeyValueData;
-use crate::commands::wait_or_replicas;
+use crate::commands::{server_config, wait_or_replicas};
 use crate::connect::{configure_replica, connect_to_master, psync, send_rdb_base64_to_hex};
 use crate::db::{data_get, data_set, key_expiry_thread};
 use crate::resp::RespHandler;
@@ -74,6 +74,8 @@ struct RedisServer {
     pub master_port: Option<u16>,
     pub self_port: u16,
     pub self_nanoid: String,
+    pub dir: Option<String>,
+    pub dbfilename: Option<String>,
 }
 
 impl RedisServer {
@@ -88,6 +90,8 @@ impl RedisServer {
         let mut master_host: Option<String> = None;
         let mut master_port: Option<u16> = None;
         let mut is_master = true;
+        let mut dir: Option<String> = None;
+        let mut dbfilename: Option<String> = None;
 
         if let Some(replica) = args.replicaof {
             is_master = false;
@@ -101,6 +105,14 @@ impl RedisServer {
                 Ok(port) => master_port = Some(port),
                 Err(_) => return Err(ServerError::BadReplicaPort),
             };
+        }
+
+        if let Some(arg_dir) = args.dir {
+            dir = Some(arg_dir);
+        }
+
+        if let Some(arg_dbfilename) = args.dbfilename {
+            dbfilename = Some(arg_dbfilename);
         }
 
         let replid: String = rand::thread_rng()
@@ -119,6 +131,8 @@ impl RedisServer {
             master_port,
             self_port,
             self_nanoid: nanoid!(),
+            dir,
+            dbfilename,
         })
     }
 
@@ -134,6 +148,10 @@ struct Args {
     port: Option<u16>,
     #[arg(long)]
     replicaof: Option<String>,
+    #[arg(long)]
+    dir: Option<String>,
+    #[arg(long)]
+    dbfilename: Option<String>,
 }
 
 #[tokio::main]
@@ -339,6 +357,9 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     slave_tx.send(Value::SimpleCommand(UpdateReplicasCount)).await.unwrap();
                     let res = wait_or_replicas(args, watch_replicas_count_rx_clone).await;
                     res
+                },
+                "config"=> {
+                    server_config(args, server_info_clone.clone())
                 }
                 c => panic!("Cannot handle command {}", c),
 

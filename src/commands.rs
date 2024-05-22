@@ -44,6 +44,48 @@ pub fn server_info(server_info_clone: Arc<Mutex<RedisServer>>, args: Vec<Value>)
     Value::ArrayBulkString(res)
 }
 
+pub fn server_config(args: Vec<Value>, server_info: Arc<Mutex<RedisServer>>) -> Value {
+    let mut res = vec![];
+    let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
+    let config_cmd = args.get(0);
+    match config_cmd {
+        None => { Value::NullBulkString() }
+        Some(s) if s.to_ascii_lowercase().as_str() == "get" => {
+            for arg in args.into_iter().skip(1) {
+                match arg.to_ascii_lowercase().as_str() {
+                    "dir" => {
+                        let dir = {
+                            server_info.lock().unwrap().dir.clone()
+                        };
+                        match dir {
+                            None => {},
+                            Some(s) => {
+                                res.push(Value::BulkString("dir".to_string()));
+                                res.push(Value::BulkString(s));
+                            },
+                        }
+                    },
+                    "dbfilename" => {
+                        let dbfilename = {
+                            server_info.lock().unwrap().dbfilename.clone()
+                        };
+                        match dbfilename {
+                            None => {},
+                            Some(s) => {
+                                res.push(Value::BulkString("dbfilename".to_string()));
+                                res.push(Value::BulkString(s));
+                            },
+                        }
+                    },
+                    _ => { return Value::NullBulkString(); }
+                }
+            }
+            Value::Array(res)
+        },
+        _ => { Value::NullBulkString() },
+    }
+}
+
 
 pub async fn wait_or_replicas(args: Vec<Value>, mut watch_replicas_count_rx: watch::Receiver<usize>) -> Value {
     let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
