@@ -329,6 +329,7 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     println!("[INFO] - Sending RDB File to Replica");
                     handler.write_value(send_rdb_base64_to_hex(EMPTY_RDB_FILE)).await.unwrap();
                     to_replicate = true;
+                    slave_tx.send(Value::SimpleCommand(GoodAckFromReplica)).await.unwrap();
                     Value::SimpleString("OK".to_string())
                 },
                 "wait" => {
@@ -370,6 +371,8 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                             master_offset.0 += master_offset.1;
                             master_offset.1 = 0;
                             master_offset.0 += handler.write_value_and_count(new_v).await.unwrap();
+
+                            //todo : envoyer le ack uniquement quand on voudra update le nombre de replicas qui sont sync
                             master_offset.1 = handler.
                                 write_value_and_count(ack_command_to_check.clone()).await.unwrap();
                             println!("Envoyé le ACK : en attente de réponse avec valeur = {:?}", master_offset);
