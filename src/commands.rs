@@ -1,10 +1,8 @@
 use std::sync::{Arc, Mutex};
-use std::thread::sleep;
-use std::time::{Duration};
 use tokio::sync::watch;
-use tokio::time::{Instant, timeout};
+use tokio::time::{Instant, timeout, Duration, sleep};
 use crate::{RedisServer, unpack_bulk_str};
-use crate::resp::{RespHandler, Value};
+use crate::resp::Value;
 
 
 
@@ -62,6 +60,8 @@ pub async fn wait_or_replicas(args: Vec<Value>, watch_replicas_count_rx: watch::
                     }
                     println!("NOW is : {:?} // repl_count = {:?} // Waiting for max {:?} ms", Instant::now(), replica_count, timeout_time_milli);
                     while Instant::now() < timeout_instant || replica_count < number_of_replicas {
+                        //todo enlever ce sleep
+                        sleep(Duration::from_millis(80)).await;
                         if let Ok(_) = timeout(Duration::from_millis(500), watch_replicas_count_rx.clone().changed()).await {
                             {
                                 replica_count = watch_replicas_count_rx.borrow().clone();

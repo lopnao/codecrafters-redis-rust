@@ -2,11 +2,10 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::{io, thread};
-use std::time::Duration;
 use resp::Value;
 use tokio::net::{TcpListener, TcpStream};
 use anyhow::Result;
-use tokio::time::{Instant, timeout};
+use tokio::time::Instant;
 use clap::Parser;
 use nanoid::nanoid;
 use rand::distributions::Alphanumeric;
@@ -382,10 +381,8 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     }
                 }
 
-                // Ok(Some(val)) = handler.read_value() => {
-                val = handler.read_value() => {
+                Ok(Some(val)) = handler.read_value() => {
                     println!("val = {:?}", val);
-                    let val = val.unwrap().unwrap();
                     match val {
                         Value::ArrayBulkString(v) | Value::Array(v) => {
                             println!("ICI v = {:?}", v);
@@ -407,7 +404,7 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                         },
                         vallllue => {
                             println!("ICI valllllue = {:?}", vallllue);
-                        }
+                        },
                     }
                     println!("Dans le BUFFER APRES : {:?}", handler.buffer);
                 }

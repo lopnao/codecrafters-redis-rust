@@ -2,8 +2,7 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use tokio::time::Instant;
-use std::time::Duration;
+use tokio::time::{Instant, Duration};
 use crate::resp::Value;
 use crate::unpack_bulk_str;
 
