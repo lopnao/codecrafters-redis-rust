@@ -61,8 +61,6 @@ pub async fn wait_or_replicas(args: Vec<Value>, mut watch_replicas_count_rx: wat
                     println!("NOW is : {:?} // repl_count = {:?} // Waiting for max {:?} ms", Instant::now(), replica_count, timeout_time_milli);
                     while Instant::now() < timeout_instant && replica_count < number_of_replicas {
                         let new_duration_to_timeout_time = timeout_instant - Instant::now();
-                        //todo enlever ce sleep
-                        // sleep(Duration::from_millis(80)).await;
                         if let Ok(_) = timeout(new_duration_to_timeout_time, watch_replicas_count_rx.clone().changed()).await {
                             {
                                 replica_count = *watch_replicas_count_rx.borrow_and_update();
