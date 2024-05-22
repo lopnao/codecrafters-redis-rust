@@ -256,7 +256,9 @@ async fn propagate_to_replicas(mut master_receiver: Receiver<Value>,
         while let Some(value_to_propagate) = master_receiver.recv().await {
             if let Value::SimpleCommand(command) = &value_to_propagate {
                 match command {
-                    UpdateReplicasCount => {},
+                    UpdateReplicasCount => {
+                        broadcast_sender.send(Value::SimpleCommand(UpdateReplicasCount)).unwrap();
+                    },
                     GoodAckFromReplica => {
                         good_ack += 1;
                         println!("GOOD BOT!");
@@ -334,6 +336,7 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                 },
                 "wait" => {
                     let watch_replicas_count_rx_clone = watch_replicas_count_rx_clone.clone();
+                    slave_tx.send(Value::SimpleCommand(UpdateReplicasCount)).await.unwrap();
                     let res = wait_or_replicas(args, watch_replicas_count_rx_clone).await;
                     res
                 }
@@ -361,23 +364,22 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
         loop {
             println!("Dans le BUFFER AVANT LE SELECT : {:?}", handler.buffer);
             tokio::select! {
-                // Ok(v) = broadcast_receiver.recv() => {
-                v = broadcast_receiver.recv() => {
-                    let v = v.unwrap();
-                    let new_v_to_send = v.clone();
-                    let new_v = v.deserialize_bulkstring();
-                    match new_v_to_send {
+                Ok(v) = broadcast_receiver.recv() => {
+                    match v {
                         Value::ArrayBulkString(v) => {
                             master_offset.0 += master_offset.1;
                             master_offset.1 = 0;
-                            master_offset.0 += handler.write_value_and_count(new_v).await.unwrap();
+                            master_offset.0 += handler.write_value_and_count(Value::ArrayBulkString(v).deserialize_bulkstring()).await.unwrap();
 
-                            //todo : envoyer le ack uniquement quand on voudra update le nombre de replicas qui sont sync
+
+                        },
+                        Value::SimpleCommand(UpdateReplicasCount) => {
+                            println!("Je suis ici !");
                             master_offset.1 = handler.
                                 write_value_and_count(ack_command_to_check.clone()).await.unwrap();
                             println!("Envoyé le ACK : en attente de réponse avec valeur = {:?}", master_offset);
                             println!("Dans le BUFFER ACTUELLEMENT : {:?}", handler.buffer);
-                        },
+                        }
                         a => {
                             println!("ICI : a = {:?}", a);
                         },
