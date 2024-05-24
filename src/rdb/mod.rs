@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
+use std::num::ParseIntError;
 use thiserror::Error;
 use tokio::fs::{File, metadata};
 use tokio::io::AsyncReadExt;
 use crate::rdb::RDBError::ParsingError;
-use crate::rdb::StringEncodedValue::{StringEncodedString, StringEncodedI8, ListEncodedString, SortedSetEncodedString, StringEncodedI32, StringEncodedI16};
+use crate::rdb::StringEncodedValue::{StringEncodedString, StringEncodedI8, ListEncodedString, SortedSetEncodedString, StringEncodedI32, StringEncodedI16, NoneValue};
 
 #[derive(Error, Debug)]
 #[derive(PartialEq)]
@@ -27,9 +28,28 @@ enum RDBField {
     RDBMagicField(MagicField),
     RDBAuxiliaryField(AuxiliaryField),
     DBSelectorField,
-    KeyValueField(Vec<KeyValuePair>),
+    RDBKeyValueField(KeyValueField),
 
 
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RDBFileStruct {
+    magic_field: Option<MagicField>,
+    auxiliary_field: Option<AuxiliaryField>,
+    key_value_fields: Vec<Option<KeyValueField>>,
+    total_bytes_on_disk: usize,
+}
+
+impl RDBFileStruct {
+    fn new(magic_field: Option<MagicField>, auxiliary_field: Option<AuxiliaryField>, key_value_fields: Vec<Option<KeyValueField>>, total_bytes_on_disk: usize) -> Self {
+        Self {
+            magic_field,
+            auxiliary_field,
+            key_value_fields,
+            total_bytes_on_disk
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -53,7 +73,7 @@ trait ToHex {
 trait FromHex {
     type Item;
 
-    fn from_hex(bytes_vec: &[u8]) -> Result<Self::Item, RDBError>;
+    fn from_hex(bytes_vec: &[u8]) -> Result<(Option<Self::Item>, usize), RDBError>;
 }
 
 impl ToHex for MagicField {
@@ -74,13 +94,13 @@ impl ToHex for MagicField {
 
 impl FromHex for MagicField {
     type Item = MagicField;
-    fn from_hex(bytes_vec: &[u8]) -> Result<MagicField, RDBError> {
+    fn from_hex(bytes_vec: &[u8]) -> Result<(Option<Self::Item>, usize), RDBError> {
         match bytes_vec.len() {
             9 => {
                 let version_bytes = &bytes_vec[5..];
                 if let Ok(version_str) = String::from_utf8(version_bytes.to_vec()) {
                     if let Ok(version_u8) = u8::from_str_radix(version_str.as_str(), 10) {
-                        return Ok(MagicField::new(version_u8));
+                        return Ok((Some(MagicField::new(version_u8)), 9));
                     }
                 }
                 Err(ParsingError("The parsing of version went wrong !".to_string()))
@@ -99,34 +119,121 @@ pub struct AuxiliaryField {
 impl FromHex for AuxiliaryField {
     type Item = AuxiliaryField;
 
-    fn from_hex(data: &[u8]) -> Result<Self::Item, RDBError> {
+    fn from_hex(data: &[u8]) -> Result<(Option<Self::Item>, usize), RDBError> {
         let mut cur_ind = 0;
-        return match data[cur_ind] {
-            250 => {
-                cur_ind += 1;
-                let mut keys = vec![];
-                let mut values = vec![];
+        let fe_ind = read_until_specific_byte_is_minimum_of(data, 251)?;
+        let mut keys = vec![];
+        let mut values = vec![];
 
-                let fe_ind = read_until_specific_byte(data, 254)?;
-                while cur_ind < fe_ind {
-                    // Reading the key
-                    let (key_to_add, byte_consumed_by_key) = read_simple_encoded_string(data)?;
-                    cur_ind += byte_consumed_by_key;
-                    // Adding the key to the vec
-                    keys.push(key_to_add);
-                    // Reading the value
-                    let (value_to_add, byte_consumed_by_value) = read_simple_encoded_string(data)?;
-                    cur_ind += byte_consumed_by_value;
-                    // Adding the value to the vec
-                    values.push(value_to_add);
-                }
-                if cur_ind == fe_ind {
-                    return Ok(AuxiliaryField { keys, values });
-                }
-                Err(ParsingError("First Byte after Auxiliary Field Parsing is not 0xFE".to_string()))
-            },
-            _ => { Err(ParsingError("First Byte of Auxiliary Field is not 0xFA".to_string())) }
-        };
+
+
+        while cur_ind < fe_ind + 1 {
+            // Reading the 0xfa signature of Auxiliary Field
+            match data[cur_ind] {
+                250         => { cur_ind += 1; }
+                (251..=255) => { return Ok((Some(AuxiliaryField { keys, values }), cur_ind)); }
+                _           => { return Err(ParsingError("First byte of parsing loop is not 0xfe".to_string())); }
+            }
+            // Reading the key
+            let (key_to_add, byte_consumed_by_key) = read_simple_encoded_string(&data[cur_ind..])?;
+            cur_ind += byte_consumed_by_key;
+            // Adding the key to the vec
+            keys.push(key_to_add);
+            // Reading the value
+            let (value_to_add, byte_consumed_by_value) = read_simple_encoded_string(&data[cur_ind..])?;
+            cur_ind += byte_consumed_by_value;
+            // Adding the value to the vec
+            values.push(value_to_add);
+
+        }
+        return Err(ParsingError("First byte after Auxiliary Field parsing is not in (0xfb..0xff) range".to_string()));
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyValueField {
+    map: BTreeMap<StringEncodedValue, KeyValuePair>
+}
+
+impl FromHex for KeyValueField {
+    type Item = KeyValueField;
+
+    fn from_hex(data: &[u8]) -> Result<(Option<Self::Item>, usize), RDBError> {
+        let mut cur_ind = 0;
+        let fe_ind = read_until_specific_byte_is_minimum_of(data, 254)?;
+        let mut map: BTreeMap<StringEncodedValue, KeyValuePair> = BTreeMap::new();
+
+
+
+        while cur_ind < fe_ind + 1 {
+            // Init the expiry
+            let mut expiry: u8 = 0;
+            let mut expiry_time_in_sec: Option<u32> = None;
+            let mut expiry_time_in_millisec: Option<u64> = None;
+
+            // Reading the expiry if it exists
+            match data[cur_ind] {
+                253         => {
+                    expiry = 1;
+                    expiry_time_in_sec = Some(((data[cur_ind + 1] as u32) << (3 * 8)) + ((data[cur_ind + 2] as u32) << (2 * 8)) + ((data[cur_ind + 3] as u32) << (1 * 8)) + ((data[cur_ind + 4] as u32) << (0 * 8)));
+                    cur_ind += 5;
+                },
+                252         => {
+                    expiry = 2;
+                    expiry_time_in_millisec = Some(
+                        ((data[cur_ind + 1] as u64) << (7 * 8)) +((data[cur_ind + 2] as u64) << (6 * 8)) + ((data[cur_ind + 3] as u64) << (5 * 8)) +
+                            ((data[cur_ind + 4] as u64) << (4 * 8)) + ((data[cur_ind + 5] as u64) << (3 * 8)) + ((data[cur_ind + 6] as u64) << (2 * 8)) +
+                            ((data[cur_ind + 7] as u64) << (1 * 8)) + ((data[cur_ind + 8] as u64) << (0 * 8))
+                    );
+                    cur_ind += 9;
+                },
+                (254..=255) => { return Ok((Some(KeyValueField { map }), cur_ind)); }
+                _           => { return Err(ParsingError("Error while parsing key-value pair in KeyValueField parsing from hex".to_string())); }
+            }
+            // Reading the value type
+            let value_type_byte = data[cur_ind];
+            cur_ind += 1;
+            let mut value = NoneValue;
+
+            // Reading the key
+            let (key, bytes_consumed_by_value) = read_simple_encoded_string(&data[cur_ind..])?;
+            cur_ind += bytes_consumed_by_value;
+
+            // Reading the value
+            match value_type_byte {
+                0   => {
+                    let (value_to_add, bytes_consumed_by_value) = read_simple_encoded_string(&data[cur_ind..])?;
+                    value = value_to_add;
+                    cur_ind += bytes_consumed_by_value;
+                },
+                1   => {
+                    let (value_to_add, bytes_consumed_by_value) = read_list_encoded_strings(&data[cur_ind..])?;
+                    value = value_to_add;
+                    cur_ind += bytes_consumed_by_value;
+                },
+                2   => {
+                    let (value_to_add, bytes_consumed_by_value) = read_list_encoded_strings(&data[cur_ind..])?;
+                    value = value_to_add;
+                    cur_ind += bytes_consumed_by_value;
+                },
+                3   => {
+                    let (value_to_add, bytes_consumed_by_value) = read_sorted_set(&data[cur_ind..])?;
+                    value = value_to_add;
+                    cur_ind += bytes_consumed_by_value;
+                },
+                4   => {
+                    let (value_to_add, bytes_consumed_by_value) = read_hash_map(&data[cur_ind..])?;
+                    value = value_to_add;
+                    cur_ind += bytes_consumed_by_value;
+                },
+                _ => { return Err(ParsingError("Error while parsing key-value pair in KeyValueField parsing from hex".to_string())) },
+            }
+            // Adding the key_value to the map
+            let key_value_pair_to_add = KeyValuePair::new(key.clone(), value, expiry, expiry_time_in_sec, expiry_time_in_millisec);
+            map.insert(key, key_value_pair_to_add);
+
+        }
+        return Err(ParsingError("First byte after Auxiliary Field parsing is not in (0xfb..0xff) range".to_string()));
     }
 }
 
@@ -141,13 +248,28 @@ pub enum StringEncodedValue {
     LZFStringEncodedString(String),
     ListEncodedString(Vec<StringEncodedValue>),
     SortedSetEncodedString(BTreeMap<StringEncodedValue, StringEncodedValue>),
+    NoneValue
 }
 
 #[derive(Debug, Clone, PartialEq)]
 struct KeyValuePair {
-    value_type: u8,
     key: StringEncodedValue,
     value: StringEncodedValue,
+    expiry: u8, // if 0 -> no expiry, if 1 -> expiry is in sec, if 2 -> expiry in msec
+    expiry_time_in_sec: Option<u32>,
+    expiry_time_in_millisec: Option<u64>,
+}
+
+impl KeyValuePair {
+    fn new(key: StringEncodedValue, value: StringEncodedValue, expiry: u8, expiry_time_in_sec: Option<u32>, expiry_time_in_millisec: Option<u64>) -> Self {
+        Self {
+            key,
+            value,
+            expiry,
+            expiry_time_in_sec,
+            expiry_time_in_millisec
+        }
+    }
 }
 
 #[allow(unused)]
@@ -231,6 +353,15 @@ fn read_until_specific_byte(data: &[u8], byte_to_search: u8) -> Result<usize, RD
     return Err(ParsingError(format!("The byte : {:x} is not in buffer", byte_to_search)));
 }
 
+fn read_until_specific_byte_is_minimum_of(data: &[u8], byte_to_search: u8) -> Result<usize, RDBError> {
+    for i in 0..(data.len() - 1) {
+        if data[i + 1] >= byte_to_search {
+            return Ok(i + 1);
+        }
+    }
+    return Err(ParsingError(format!("The byte : {:x} is not in buffer", byte_to_search)));
+}
+
 fn read_value_type(data: &[u8]) -> Result<(StringEncodedValue, usize), RDBError> {
     match data[0] {
         0 => { return Ok((StringEncodedString("".to_string()), 1)); }
@@ -298,7 +429,42 @@ fn read_sorted_set(data: &[u8]) -> Result<(StringEncodedValue, usize), RDBError>
     Err(ParsingError("sorted_set parsing error !".to_string()))
 }
 
-async fn read_rdb_file(path_to_file: &str) -> Result<(), RDBError> {
+fn read_hash_map(data: &[u8]) -> Result<(StringEncodedValue, usize), RDBError> {
+    if let Ok((size_of_map, _, mut cur_ind)) = read_length(data) {
+        let mut map: BTreeMap<StringEncodedValue, StringEncodedValue> = BTreeMap::new();
+        let mut cur_key;
+        let mut cur_value;
+        for _cur_keyvalue_to_parse in 0..size_of_map {
+            // Parsing the key
+            match read_simple_encoded_string(&data[cur_ind..]) {
+                Ok((StringEncodedString(key), bytes_consumed)) => {
+                    cur_key = key;
+                    cur_ind += bytes_consumed;
+                },
+                _ => { return Err(ParsingError("hash_map parsing error ! (key)".to_string())); }
+            }
+            // Parsing the value
+            match read_simple_encoded_string(&data[cur_ind..]) {
+                Ok((StringEncodedString(value), bytes_consumed)) => {
+                    cur_value = value;
+                    cur_ind += bytes_consumed;
+                },
+                _ => { return Err(ParsingError("hash_map parsing error ! (value)".to_string())); }
+            }
+
+
+
+            // Adding them together in the hashmap
+            map.insert(StringEncodedString(cur_key), StringEncodedString(cur_value));
+        }
+        return Ok((SortedSetEncodedString(map), cur_ind));
+    }
+    Err(ParsingError("hash_map parsing error ! (size)".to_string()))
+}
+
+
+
+async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize), RDBError> {
     let mut f = File::open(path_to_file).await.unwrap();
     let metadata = metadata(path_to_file).await.unwrap();
     let mut buffer = vec![0; metadata.len() as usize];
@@ -307,18 +473,93 @@ async fn read_rdb_file(path_to_file: &str) -> Result<(), RDBError> {
     let data = buffer.as_slice();
     let mut cur_ind = 0;
 
+    let mut magic_field = None;
     // Read Magic Field
-    let _magic_field = MagicField::from_hex(&data[..=9])?;
-    cur_ind += 9;
+    let (magic_field_to_add, bytes_consumed) = MagicField::from_hex(&data[..=9])?;
+    magic_field = magic_field_to_add;
+    cur_ind += bytes_consumed;
 
-    // Read Auxiliary Field
-    let auxiliary_field = AuxiliaryField::from_hex(&data[cur_ind..])?;
+    let mut auxiliary_field = None;
+    // Read Auxiliary Field if present
+    let (auxiliary_field_if_present, bytes_consumed) = if data[cur_ind] == 250 { AuxiliaryField::from_hex(&data[cur_ind..])? } else { (None, 0) };
+    auxiliary_field = auxiliary_field_if_present;
+    cur_ind += bytes_consumed;
 
-    Ok(())
+    // Read the Database number if present
+    let mut database_number = 0;
+    if data[cur_ind] == 254 {
+        database_number = data[cur_ind + 1];
+        cur_ind += 2;
+    }
+
+    // Read resizedb if present
+    let mut hash_table_size: i32 = 0;
+    let mut expiry_table_size: i32 = 0;
+    if data[cur_ind] == 251 {
+
+        // Read the hash_table_size
+        let (first_value, int_type, _) = read_length(&data[cur_ind..])?;
+        cur_ind += 1;
+        match int_type {
+            -1  => { hash_table_size = first_value as _ }
+            0 => {
+                cur_ind += 1;
+                hash_table_size = i8::from_be_bytes([data[cur_ind - 1]]) as _;
+            },
+            1 => {
+                cur_ind += 2;
+                hash_table_size = i16::from_be_bytes([data[cur_ind - 2], data[cur_ind - 1]]) as _;
+            },
+            2 => {
+                cur_ind += 4;
+                hash_table_size = i32::from_be_bytes([data[cur_ind - 4], data[cur_ind - 3], data[cur_ind - 2], data[cur_ind - 1]]) as _;
+            },
+            _ => {}
+        }
+
+        // Read the expiry_table_size
+        let (first_value, int_type, _) = read_length(&data[cur_ind..])?;
+        cur_ind += 1;
+        match int_type {
+            -1  => { expiry_table_size = first_value as _ }
+            0 => {
+                cur_ind += 1;
+                expiry_table_size = i8::from_be_bytes([data[cur_ind - 1]]) as _;
+            },
+            1 => {
+                cur_ind += 2;
+                expiry_table_size = i16::from_be_bytes([data[cur_ind - 2], data[cur_ind - 1]]) as _;
+            },
+            2 => {
+                cur_ind += 4;
+                expiry_table_size = i32::from_be_bytes([data[cur_ind - 4], data[cur_ind - 3], data[cur_ind - 2], data[cur_ind - 1]]) as _;
+            },
+            _ => {}
+        }
+    }
+
+    // Read the key_value_pairs if present
+    let mut key_value_field = None;
+    if (data[cur_ind] != 254) & (data[cur_ind] != 255) {
+        let (key_value_field_if_present, bytes_consumed) = KeyValueField::from_hex(&data[cur_ind..])?;
+        key_value_field = key_value_field_if_present;
+        cur_ind += bytes_consumed;
+    }
+
+    Ok((RDBFileStruct::new(magic_field, auxiliary_field, vec![key_value_field], cur_ind), cur_ind))
+}
 
 
+fn read_hex_from_string(s: &str) -> Result<Vec<u8>, ParseIntError> {
+    let mut ans = vec![];
+    // let s = "fa 08 75 73  65 64 2d 6d 65 6d c2 b0 c4 10 00";
+    let new_s = s.split_whitespace();
+    for hex in new_s {
+        let dec = u8::from_str_radix(hex, 16)?;
+        ans.push(dec);
+    }
 
-
+    Ok(ans)
 }
 
 
@@ -329,13 +570,28 @@ mod tests {
     #[test]
     fn test_magic_field() {
         assert_eq!(MagicField::new(115).to_hex(), vec![82, 69, 68, 73, 83, 48, 49, 49, 53]);
-        assert_eq!(MagicField::from_hex(&[82, 69, 68, 73, 83, 48, 49, 49, 53]), Ok(MagicField::new(115)));
-        assert_eq!(MagicField::from_hex(&[82, 69, 68, 73, 83, 48, 49, 49, 54]), Ok(MagicField::new(116)));
-        assert_eq!(MagicField::from_hex(&[82, 69, 68, 73, 83, 48, 50, 49, 54]), Ok(MagicField::new(216)));
-        assert_eq!(MagicField::from_hex(&[82, 69, 68, 73, 83, 48, 48, 49, 49]), Ok(MagicField::new(11)));
+        assert_eq!(MagicField::from_hex(&[82, 69, 68, 73, 83, 48, 49, 49, 53]), Ok((Some(MagicField::new(115)), 9)));
+        assert_eq!(MagicField::from_hex(&[82, 69, 68, 73, 83, 48, 49, 49, 54]), Ok((Some(MagicField::new(116)), 9)));
+        assert_eq!(MagicField::from_hex(&[82, 69, 68, 73, 83, 48, 50, 49, 54]), Ok((Some(MagicField::new(216)), 9)));
+        assert_eq!(MagicField::from_hex(&[82, 69, 68, 73, 83, 48, 48, 49, 49]), Ok((Some(MagicField::new(11)), 9)));
+
         assert_eq!(MagicField::to_hex(&MagicField::new(111)), vec![82, 69, 68, 73, 83, 48, 49, 49, 49]);
+
         assert_eq!(read_simple_encoded_string(&[192, 127]), Ok((StringEncodedI8(127), 2)));
+
         assert_eq!(read_simple_encoded_string(&[5, 82, 69, 68, 73, 83]), Ok((StringEncodedString("REDIS".to_string()), 6)));
+
+        assert_eq!(read_hex_from_string("fa 08 75 73  65 64 2d 6d 65 6d c2 b0 c4 10 00"),
+                   Ok(vec![250, 8, 117, 115, 101, 100, 45, 109, 101, 109, 194, 176, 196, 16, 0]));
+
+        assert_eq!(AuxiliaryField::from_hex(&[250, 9, 114, 101, 100, 105, 115, 45, 118, 101, 114, 5, 55, 46, 50, 46, 48, 250, 10, 114, 101,
+            100, 105, 115, 45, 98, 105, 116, 115, 192, 64, 250, 5, 99, 116, 105, 109, 101, 194, 109, 8, 188, 101, 250, 8, 117, 115, 101, 100, 45,
+            109, 101, 109, 194, 176, 196, 16, 0, 250, 8, 97, 111, 102, 45, 98, 97, 115, 101, 192, 0, 255]),
+                   Ok((Some(AuxiliaryField { keys: vec![StringEncodedString("redis-ver".to_string()), StringEncodedString("redis-bits".to_string()),
+                                                        StringEncodedString("ctime".to_string()), StringEncodedString("used-mem".to_string()),
+                                                        StringEncodedString("aof-base".to_string())],
+                                            values: vec![StringEncodedString("7.2.0".to_string()), StringEncodedI8(64), StringEncodedI32(1829289061),
+                                                        StringEncodedI32(-1329328128), StringEncodedI8(0)] }), 70)));
     }
 
 }
