@@ -479,17 +479,24 @@ pub async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize),
     let data = buffer.as_slice();
     let mut cur_ind = 0;
 
+    println!("[DEBUG] :::::::::: RDBFile ReadBuffer ::::::::::");
+    println!("{:x?}", data);
+
     let mut magic_field = None;
     // Read Magic Field
-    let (magic_field_to_add, bytes_consumed) = MagicField::from_hex(&data[..=9])?;
+    let (magic_field_to_add, bytes_consumed) = MagicField::from_hex(&data[..9])?;
     magic_field = magic_field_to_add;
     cur_ind += bytes_consumed;
+    println!("Magic Field has been read: {:?}", magic_field);
 
     let mut auxiliary_field = None;
     // Read Auxiliary Field if present
     let (auxiliary_field_if_present, bytes_consumed) = if data[cur_ind] == 250 { AuxiliaryField::from_hex(&data[cur_ind..])? } else { (None, 0) };
     auxiliary_field = auxiliary_field_if_present;
     cur_ind += bytes_consumed;
+    if !auxiliary_field.is_none() {
+        println!("Auxiliary Field has been read: {:?}", auxiliary_field);
+    }
 
     // Read the Database number if present
     let mut database_number = 0;
@@ -502,7 +509,9 @@ pub async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize),
     let mut hash_table_size: i32 = 0;
     let mut expiry_table_size: i32 = 0;
     if data[cur_ind] == 251 {
+        cur_ind += 1;
 
+        println!("There is a resize_db, cur_ind = {:?}", cur_ind);
         // Read the hash_table_size
         let (first_value, int_type, _) = read_length(&data[cur_ind..])?;
         cur_ind += 1;
@@ -522,6 +531,7 @@ pub async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize),
             },
             _ => {}
         }
+        println!("hash_table_size = {:?}", hash_table_size);
 
         // Read the expiry_table_size
         let (first_value, int_type, _) = read_length(&data[cur_ind..])?;
@@ -542,11 +552,14 @@ pub async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize),
             },
             _ => {}
         }
+        println!("expiry_table_size = {:?}", expiry_table_size);
     }
 
+    println!("cur_ind = {:?}", cur_ind);
     // Read the key_value_pairs if present
     let mut key_value_field = None;
     if (data[cur_ind] != 254) & (data[cur_ind] != 255) {
+        println!("Trying to read the key_value fields of RDB File ! cur_ind = {:?}", cur_ind);
         let (key_value_field_if_present, bytes_consumed) = KeyValueField::from_hex(&data[cur_ind..])?;
         key_value_field = key_value_field_if_present;
         cur_ind += bytes_consumed;
@@ -598,6 +611,25 @@ mod tests {
                                                         StringEncodedString("aof-base".to_string())],
                                             values: vec![StringEncodedString("7.2.0".to_string()), StringEncodedI8(64), StringEncodedI32(1829289061),
                                                         StringEncodedI32(-1329328128), StringEncodedI8(0)] }), 70)));
+    }
+
+    // fn test_index() {
+    //     let data = [52, 45, 44, 49, 53, 30, 30, 30, 33, fa, 9, 72, 65, 64, 69, 73, 2d, 76, 65, 72, 5, 37, 2e, 32, 2e, 30, fa, a, 72, 65, 64, 69, 73, 2d, 62, 69, 74, 73, c0, 40, fe, 0, fb, 1, 0, 0, 5, 67, 72, 61, 70, 65, 9, 72, 61, 73, 70, 62, 65, 72, 72, 79, ff, d5, 39, b9, 58, 15, c1, f3, c0, a]
+    // }
+    #[test]
+    fn test_parse_hex_data() {
+        println!("{:?}", read_hex_from_string("52 45 44 49 53 30 30 30 33 fa 09 72 65 64 69 73 2d 76 65 72 05 37 2e 32 2e 30 fa 0a 72 65 64 69 73 2d 62 69 74 73 c0 40 fe 00 fb 01 00 00 05 67 72 61 70 65 09 72 61 73 70 62 65 72 72 79 ff d5 39 b9 58 15 c1 f3 c0 0a"));
+    }
+
+    #[test]
+    fn read_byte() {
+        let cur_ind = 45;
+        let prev = cur_ind - 2;
+        let next = cur_ind + 2;
+        let data = [82, 69, 68, 73, 83, 48, 48, 48, 51, 250, 9, 114, 101, 100, 105, 115, 45, 118, 101, 114, 5, 55, 46, 50, 46, 48, 250, 10, 114, 101, 100, 105, 115, 45, 98, 105, 116, 115, 192, 64, 254, 0, 251, 1, 0, 0, 5, 103, 114, 97, 112, 101, 9, 114, 97, 115, 112, 98, 101, 114, 114, 121, 255, 213, 57, 185, 88, 21, 193, 243, 192, 10];
+        println!("data[{:?}] = {:?}", cur_ind, data[cur_ind]);
+        println!("data[{:?}-2..={:?}+2] = {:?}", cur_ind, cur_ind, data[prev..=next].to_vec());
+
     }
 
 }
