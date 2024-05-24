@@ -101,7 +101,7 @@ impl FromHex for AuxiliaryField {
 
     fn from_hex(data: &[u8]) -> Result<Self::Item, RDBError> {
         let mut cur_ind = 0;
-        let _ = return match data[cur_ind] {
+        return match data[cur_ind] {
             250 => {
                 cur_ind += 1;
                 let mut keys = vec![];
