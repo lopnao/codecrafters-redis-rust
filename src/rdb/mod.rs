@@ -127,7 +127,6 @@ impl FromHex for AuxiliaryField {
             },
             _ => { Err(ParsingError("First Byte of Auxiliary Field is not 0xFA".to_string())) }
         };
-
     }
 }
 
