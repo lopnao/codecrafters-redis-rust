@@ -121,8 +121,8 @@ impl RedisServer {
 
         if !dir.is_none() & !dbfilename.is_none() {
             let path_to_db_filename = dir.clone().unwrap() + &dbfilename.clone().unwrap();
-            if let Ok(data_read) = read_rdb_file(&path_to_db_filename) {
-                println!("dbfile has been read !");
+            if let Ok((data_read, data_size)) = read_rdb_file(&path_to_db_filename).await {
+                println!("dbfile has been read, size of {:?} !", data_size);
                 println!("dbfile : {:?}", data_read);
                 // Process la RDBStruct en Hashmap
                 // avec la fn get_map()
@@ -147,6 +147,7 @@ impl RedisServer {
             self_nanoid: nanoid!(),
             dir,
             dbfilename,
+            data,
         })
     }
 
@@ -170,7 +171,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    let server_info = match RedisServer::init() {
+    let server_info = match RedisServer::init().await {
         Ok(s) => Arc::new(Mutex::new(s)),
         Err(e) => {
             println!("Unable to initialize Redis server: {e}");
