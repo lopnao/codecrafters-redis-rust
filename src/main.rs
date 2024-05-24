@@ -120,13 +120,14 @@ impl RedisServer {
         }
 
         if !dir.is_none() & !dbfilename.is_none() {
-            let path_to_db_filename = dir.clone().unwrap() + &dbfilename.clone().unwrap();
-            if let Ok((data_read, data_size)) = read_rdb_file(&path_to_db_filename).await {
-                println!("dbfile has been read, size of {:?} !", data_size);
-                println!("dbfile : {:?}", data_read);
-                // Process la RDBStruct en Hashmap
-                // avec la fn get_map()
-            }
+            let path_to_db_filename = dir.clone().unwrap() + "/" + &dbfilename.clone().unwrap();
+            println!("Trying to open file: {:?}", path_to_db_filename);
+            let (data_read, data_size) = read_rdb_file(&path_to_db_filename).await.unwrap();
+            println!("dbfile has been read, size of {:?} !", data_size);
+            println!("dbfile : {:?}", data_read);
+            // Process la RDBStruct en Hashmap
+            // avec la fn get_map()
+
         }
 
         let replid: String = rand::thread_rng()
