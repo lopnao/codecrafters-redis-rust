@@ -26,6 +26,7 @@ mod db;
 mod structs;
 mod connect;
 mod commands;
+mod rdb;
 
 const _TIMEOUT_FROM_CHANNEL: u64 = 350;
 const EXPIRY_LOOP_TIME: u64 = 50; // 50 milli seconds
