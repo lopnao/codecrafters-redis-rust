@@ -1,8 +1,9 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::num::ParseIntError;
 use thiserror::Error;
 use tokio::fs::{File, metadata};
 use tokio::io::AsyncReadExt;
+use crate::db::KeyValueData;
 use crate::rdb::RDBError::ParsingError;
 use crate::rdb::StringEncodedValue::{StringEncodedString, StringEncodedI8, ListEncodedString, SortedSetEncodedString, StringEncodedI32, StringEncodedI16, NoneValue};
 
@@ -49,6 +50,11 @@ impl RDBFileStruct {
             key_value_fields,
             total_bytes_on_disk
         }
+    }
+
+    pub fn get_map(self) -> Result<HashMap<String, KeyValueData>, RDBError> {
+
+        Err(ParsingError("error while parsing the database from file to the hashmap in memory.".to_string()))
     }
 }
 
@@ -464,7 +470,7 @@ fn read_hash_map(data: &[u8]) -> Result<(StringEncodedValue, usize), RDBError> {
 
 
 
-async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize), RDBError> {
+pub async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize), RDBError> {
     let mut f = File::open(path_to_file).await.unwrap();
     let metadata = metadata(path_to_file).await.unwrap();
     let mut buffer = vec![0; metadata.len() as usize];

@@ -18,6 +18,7 @@ use db::KeyValueData;
 use crate::commands::{cmd_keys, server_config, wait_or_replicas};
 use crate::connect::{configure_replica, connect_to_master, psync, send_rdb_base64_to_hex};
 use crate::db::{data_get, data_set, key_expiry_thread};
+use crate::rdb::read_rdb_file;
 use crate::resp::RespHandler;
 use crate::resp::CommandRedis::{GoodAckFromReplica, UpdateReplicasCount};
 
@@ -77,11 +78,12 @@ struct RedisServer {
     pub self_nanoid: String,
     pub dir: Option<String>,
     pub dbfilename: Option<String>,
+    pub data: Option<Arc<Mutex<HashMap<String, KeyValueData>>>>,
 }
 
 impl RedisServer {
 
-    fn init() -> Result<Self, ServerError> {
+    async fn init() -> Result<Self, ServerError> {
         let mut self_port = 6379;
         let args = Args::parse();
         if let Some(port) = args.port {
@@ -93,6 +95,7 @@ impl RedisServer {
         let mut is_master = true;
         let mut dir: Option<String> = None;
         let mut dbfilename: Option<String> = None;
+        let mut data = None;
 
         if let Some(replica) = args.replicaof {
             is_master = false;
@@ -114,6 +117,16 @@ impl RedisServer {
 
         if let Some(arg_dbfilename) = args.dbfilename {
             dbfilename = Some(arg_dbfilename);
+        }
+
+        if !dir.is_none() & !dbfilename.is_none() {
+            let path_to_db_filename = dir.clone().unwrap() + &dbfilename.clone().unwrap();
+            if let Ok(data_read) = read_rdb_file(&path_to_db_filename) {
+                println!("dbfile has been read !");
+                println!("dbfile : {:?}", data_read);
+                // Process la RDBStruct en Hashmap
+                // avec la fn get_map()
+            }
         }
 
         let replid: String = rand::thread_rng()
