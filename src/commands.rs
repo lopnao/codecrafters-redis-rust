@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::watch;
 use tokio::time::{Instant, timeout, Duration};
 use crate::{RedisServer, unpack_bulk_str};
+use crate::db::KeyValueData;
 use crate::resp::Value;
 
 
@@ -83,6 +85,26 @@ pub fn server_config(args: Vec<Value>, server_info: Arc<Mutex<RedisServer>>) -> 
             Value::Array(res)
         },
         _ => { Value::NullBulkString() },
+    }
+}
+
+pub fn cmd_keys(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>) -> Value {
+    if args.is_empty() { return Value::NullBulkString(); }
+    let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
+    let local_data = data1.lock().unwrap();
+    match args[0].to_ascii_lowercase().as_str() {
+        "*" => {
+            let keys_to_res: Vec<String> = local_data.keys().cloned().collect();
+            let mut res = vec![];
+            for key in keys_to_res {
+                res.push(Value::BulkString(key));
+            }
+            Value::Array(res)
+        },
+        _   => {
+            // We could implement the regex pattern search here
+            Value::NullBulkString()
+        }
     }
 }
 
