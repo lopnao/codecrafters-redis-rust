@@ -244,6 +244,23 @@ impl FromHex for KeyValueField {
                 _ => { return Err(ParsingError("Error while parsing key-value pair in KeyValueField parsing from hex".to_string())) },
             }
             // Adding the key_value to the map
+            match expiry {
+                1   => {
+                    let now_in_millis = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_millis();
+                    if let Some(time_in_sec) = expiry_time_in_sec {
+                        let temp = time_in_sec.checked_sub(now_in_millis as u32 / 1000).unwrap();
+                        expiry_time_in_sec = Some(temp);
+                    }
+                }
+                2   => {
+                    let now_in_millis = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_millis();
+                    if let Some(time_in_millisec) = expiry_time_in_millisec {
+                        let temp = time_in_millisec.checked_sub(now_in_millis as u64).unwrap();
+                        expiry_time_in_millisec = Some(temp);
+                    }
+                }
+                _   => {}
+            }
             let key_value_pair_to_add = KeyValuePair::new(key.clone(), value, expiry, expiry_time_in_sec, expiry_time_in_millisec);
             map.insert(key, key_value_pair_to_add);
 
