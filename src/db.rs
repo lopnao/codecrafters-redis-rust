@@ -3,6 +3,7 @@ use std::collections::{BinaryHeap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::time::{Instant, Duration};
+use crate::rdb::RDBFileStruct;
 use crate::resp::Value;
 use crate::unpack_bulk_str;
 
@@ -30,6 +31,28 @@ pub fn data_set(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>
     }
 }
 
+pub fn data_set_from_rdb(rdbfile_struct: RDBFileStruct, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
+    let mut data1 = data1.lock().unwrap();
+    let mut heap1 = heap1.lock().unwrap();
+
+    for option_map in rdbfile_struct.key_value_fields {
+        if let Some(inner_map) = option_map {
+            let map = inner_map.get_map();
+            for key in map.keys().cloned() {
+                if let Some(value) = map.get(&key) {
+                    let key_value_data = value.clone().to_data1_map();
+                    println!("Inserting : {:?} : {:?}", key.clone().to_string(), key_value_data);
+                    if key_value_data.expires {
+                        heap1.push((Reverse(key_value_data.expiring_at.clone()), key_value_data.key.clone()));
+                    }
+                    data1.insert(key.to_string(), key_value_data);
+                }
+            }
+        }
+    }
+
+}
+
 pub fn data_get(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>) -> Value {
     let data1 = data1.lock().unwrap();
     if !args.is_empty() {
@@ -45,13 +68,13 @@ pub fn data_get(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>
 pub struct KeyValueData {
     key: String,
     value: String,
-    _expires: bool,
+    expires: bool,
     _inserted_at: Instant, // time stamp when this key was inserted
     expiring_at: Instant,
 }
 
 impl KeyValueData {
-    fn new(key: String, value: String, expiry: u64) -> Self {
+    pub fn new(key: String, value: String, expiry: u64) -> Self {
         let now = Instant::now();
         let expires = match expiry {
             0 => { false },
@@ -60,7 +83,7 @@ impl KeyValueData {
         Self {
             key,
             value,
-            _expires: expires,
+            expires,
             _inserted_at: now,
             expiring_at: now + Duration::from_millis(expiry),
         }
@@ -71,7 +94,7 @@ impl KeyValueData {
     }
 
     fn _get_expires(&self) -> bool {
-        self._expires
+        self.expires
     }
 }
 

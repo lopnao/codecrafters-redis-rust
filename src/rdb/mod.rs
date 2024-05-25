@@ -1,8 +1,10 @@
 use std::collections::{BTreeMap, HashMap};
 use std::num::ParseIntError;
+use std::time::Duration;
 use thiserror::Error;
 use tokio::fs::{File, metadata};
 use tokio::io::AsyncReadExt;
+use tokio::time::Instant;
 use crate::db::KeyValueData;
 use crate::rdb::RDBError::ParsingError;
 use crate::rdb::StringEncodedValue::{StringEncodedString, StringEncodedI8, ListEncodedString, SortedSetEncodedString, StringEncodedI32, StringEncodedI16, NoneValue};
@@ -38,7 +40,7 @@ enum RDBField {
 pub struct RDBFileStruct {
     magic_field: Option<MagicField>,
     auxiliary_field: Option<AuxiliaryField>,
-    key_value_fields: Vec<Option<KeyValueField>>,
+    pub key_value_fields: Vec<Option<KeyValueField>>,
     total_bytes_on_disk: usize,
 }
 
@@ -158,7 +160,13 @@ impl FromHex for AuxiliaryField {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct KeyValueField {
-    map: BTreeMap<StringEncodedValue, KeyValuePair>
+    pub map: BTreeMap<StringEncodedValue, KeyValuePair>
+}
+
+impl KeyValueField {
+    pub fn get_map(self) -> BTreeMap<StringEncodedValue, KeyValuePair> {
+        self.map
+    }
 }
 
 impl FromHex for KeyValueField {
@@ -194,7 +202,8 @@ impl FromHex for KeyValueField {
                     cur_ind += 9;
                 },
                 (254..=255) => { return Ok((Some(KeyValueField { map }), cur_ind)); }
-                _           => { return Err(ParsingError("Error while parsing key-value pair in KeyValueField parsing from hex".to_string())); }
+                // No Expiry
+                _           => {}
             }
             // Reading the value type
             let value_type_byte = data[cur_ind];
@@ -257,8 +266,23 @@ pub enum StringEncodedValue {
     NoneValue
 }
 
+impl StringEncodedValue {
+    pub fn to_string(self) -> String {
+        match self {
+            StringEncodedString(s) => { s }
+            StringEncodedI8(i) => { format!("{i}") }
+            StringEncodedI16(i) => { format!("{i}") }
+            StringEncodedI32(i) => { format!("{i}") }
+            StringEncodedValue::LZFStringEncodedString(s) => { s }
+            ListEncodedString(v) => { "todo!".to_string() }
+            SortedSetEncodedString(map) => { "todo!".to_string() }
+            NoneValue => { "".to_string() }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
-struct KeyValuePair {
+pub struct KeyValuePair {
     key: StringEncodedValue,
     value: StringEncodedValue,
     expiry: u8, // if 0 -> no expiry, if 1 -> expiry is in sec, if 2 -> expiry in msec
@@ -275,6 +299,17 @@ impl KeyValuePair {
             expiry_time_in_sec,
             expiry_time_in_millisec
         }
+    }
+
+    pub fn to_data1_map(self) -> KeyValueData {
+        let expiring_at = if self.expiry == 2 {
+            self.expiry_time_in_millisec.unwrap()
+        } else if self.expiry == 1 {
+            self.expiry_time_in_sec.unwrap() as u64 * 1000
+        } else { 0 };
+        let value = self.value.to_string();
+        let key = self.key.to_string();
+        KeyValueData::new(key, value, expiring_at)
     }
 }
 
