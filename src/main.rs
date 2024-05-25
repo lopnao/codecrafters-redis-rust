@@ -11,13 +11,14 @@ use nanoid::nanoid;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use thiserror::Error;
+use tokio::fs::metadata;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::sync::mpsc::{Receiver, Sender};
 use commands::server_info;
 use db::KeyValueData;
 use crate::commands::{cmd_keys, server_config, wait_or_replicas};
 use crate::connect::{configure_replica, connect_to_master, psync, send_rdb_base64_to_hex};
-use crate::db::{data_get, data_set, key_expiry_thread};
+use crate::db::{data_get, data_set, data_set_from_rdb, key_expiry_thread};
 use crate::rdb::read_rdb_file;
 use crate::resp::RespHandler;
 use crate::resp::CommandRedis::{GoodAckFromReplica, UpdateReplicasCount};
@@ -78,7 +79,8 @@ struct RedisServer {
     pub self_nanoid: String,
     pub dir: Option<String>,
     pub dbfilename: Option<String>,
-    pub data: Option<Arc<Mutex<HashMap<String, KeyValueData>>>>,
+    pub data: Arc<Mutex<HashMap<String, KeyValueData>>>,
+    pub exp_heap: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>,
 }
 
 impl RedisServer {
@@ -95,7 +97,6 @@ impl RedisServer {
         let mut is_master = true;
         let mut dir: Option<String> = None;
         let mut dbfilename: Option<String> = None;
-        let mut data = None;
 
         if let Some(replica) = args.replicaof {
             is_master = false;
@@ -119,15 +120,22 @@ impl RedisServer {
             dbfilename = Some(arg_dbfilename);
         }
 
+        let data: Arc<Mutex<HashMap<String, KeyValueData>>> = Arc::new(Mutex::new(HashMap::new()));
+        let exp_heap: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>> = Arc::new(Mutex::new(BinaryHeap::new()));
+
         if !dir.is_none() & !dbfilename.is_none() {
             let path_to_db_filename = dir.clone().unwrap() + "/" + &dbfilename.clone().unwrap();
             println!("Trying to open file: {:?}", path_to_db_filename);
-            let (data_read, data_size) = read_rdb_file(&path_to_db_filename).await.unwrap();
-            println!("dbfile has been read, size of {:?} !", data_size);
-            println!("dbfile : {:?}", data_read);
-            // Process la RDBStruct en Hashmap
-            // avec la fn get_map()
-
+            if metadata(path_to_db_filename.clone()).await.is_ok() {
+                let (data_read, data_size) = read_rdb_file(&path_to_db_filename).await.unwrap();
+                println!("dbfile has been read, size of {:?} !", data_size);
+                println!("dbfile : {:?}", data_read);
+                // Process la RDBStruct en Hashmap
+                // avec la fn get_map()
+                let data_clone = data.clone();
+                let exp_heap_clone = exp_heap.clone();
+                data_set_from_rdb(data_read, data_clone, exp_heap_clone);
+            } else { println!("Can't open the file : {:?}. Starting fresh.", path_to_db_filename.clone()); }
         }
 
         let replid: String = rand::thread_rng()
@@ -149,6 +157,7 @@ impl RedisServer {
             dir,
             dbfilename,
             data,
+            exp_heap,
         })
     }
 
@@ -192,8 +201,14 @@ async fn main() {
     println!("Listening on address {addr}");
 
     let listener = TcpListener::bind(addr).await.unwrap();
-    let data: Arc<Mutex<HashMap<String, KeyValueData>>> = Arc::new(Mutex::new(HashMap::new()));
-    let exp_heap: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>> = Arc::new(Mutex::new(BinaryHeap::new()));
+    let server_info_clone = server_info.clone();
+
+    let data: Arc<Mutex<HashMap<String, KeyValueData>>> = {
+        server_info_clone.lock().unwrap().data.clone()
+    };
+    let exp_heap: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>> = {
+        server_info_clone.lock().unwrap().exp_heap.clone()
+    };
 
     // Spawning the cleaning thread for the data with expiry
     let _cleaning_thread = thread::spawn({
