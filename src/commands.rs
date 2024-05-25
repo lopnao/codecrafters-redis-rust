@@ -3,7 +3,9 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::watch;
 use tokio::time::{Instant, timeout, Duration};
 use crate::{RedisServer, unpack_bulk_str};
-use crate::db::KeyValueData;
+use crate::db::{KeyValueData, StreamDB, StreamValueType};
+use crate::rdb::RDBError;
+use crate::rdb::RDBError::StreamEntryError;
 use crate::resp::Value;
 
 
@@ -108,17 +110,49 @@ pub fn cmd_keys(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>
     }
 }
 
-pub fn get_type(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>) -> Value {
+pub fn get_type(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, stream_data: Arc<Mutex<StreamDB>>) -> Value {
     if args.is_empty() { return Value::NullBulkString(); }
     let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
     let local_data = data1.lock().unwrap();
+    let local_stream_data = stream_data.lock().unwrap();
     if let Some(arg) = args.first() {
         if let Some(_key_value) = local_data.get(arg) {
                 return Value::SimpleString("string".to_string());
+        } else if let Some(()) = local_stream_data.get_stream_key(arg) {
+            return Value::SimpleString("stream".to_string());
         }
     }
 
     Value::SimpleString("none".to_string())
+}
+
+
+pub fn cmd_xadd(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Value, RDBError> {
+    if args.is_empty() { return Err(StreamEntryError("not one arg after the XADD command.".to_string())); }
+    let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
+    let stream_key = args.first().unwrap();
+    if let id = args[1].split('-').map(|i_str| i_str.parse::<u64>().unwrap()).collect::<Vec<u64>>() {
+        let id = (id[0], id[1]);
+        let mut i = 2;
+        let mut key_values = vec![];
+        while let Some(key) = args.get(i) {
+            if let Some(value) = args.get(i + 1) {
+                key_values.push((key.clone(), StreamValueType::String(value.clone())));
+            }
+            i += 2;
+        }
+        if !key_values.is_empty() {
+            {
+                let mut stream_db_lock = stream_db.lock().unwrap();
+                stream_db_lock.add_id(stream_key.clone(), id, key_values.clone())?;
+            }
+            return Ok(Value::SimpleString(format!("{}-{}", id.0, id.1)));
+        }
+    }
+
+
+
+    Err(StreamEntryError("stream XADD command error".to_string()))
 }
 
 

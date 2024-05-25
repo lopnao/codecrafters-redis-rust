@@ -1,9 +1,11 @@
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::time::{Instant, Duration};
-use crate::rdb::RDBFileStruct;
+use crate::db::KeyValueType::StringType;
+use crate::rdb::{RDBError, RDBFileStruct};
+use crate::rdb::RDBError::StreamEntryError;
 use crate::resp::Value;
 use crate::unpack_bulk_str;
 
@@ -70,12 +72,68 @@ pub fn data_get(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>
 }
 
 #[derive(Debug, Clone)]
+pub enum StreamValueType {
+    String(String),
+    Integer(i64),
+    UInteger(u64),
+    Hashmap(BTreeMap<String, StreamValueType>)
+}
+
+pub struct StreamDB {
+    streams: BTreeMap<String, BTreeMap<(u64, u64), Vec<(String, StreamValueType)>>>,
+}
+impl StreamDB {
+    pub fn init() -> Self {
+        let map = BTreeMap::new();
+        Self {
+            streams: map
+        }
+    }
+
+    pub fn add_stream_key(mut self, key: String) {
+        self.streams.insert(key, BTreeMap::new());
+    }
+
+    pub fn get_stream_key(&self, key: &str) -> Option<()> {
+        if self.streams.contains_key(key) {
+            return Some(());
+        }
+        None
+    }
+
+    pub fn add_id(&mut self, key: String, id: (u64, u64), keyvalues: Vec<(String, StreamValueType)>) -> Result<(), RDBError> {
+        if let mut key_map = self.streams.get(&key).unwrap().to_owned() {
+            key_map.insert(id, keyvalues);
+            return Ok(());
+        }
+
+        Err(StreamEntryError("error while adding id to the stream key".to_string()))
+    }
+
+    pub fn read_id(self, key: &str, id: (u64, u64)) -> Result<Vec<(String, StreamValueType)>, RDBError> {
+        if let Some(key) = self.streams.get(key) {
+            if let Some(id_keyvalues) = key.get(&id) {
+                return Ok(id_keyvalues.clone())
+            }
+        }
+        Err(StreamEntryError("error while reading id of the stream key".to_string()))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum KeyValueType {
+    StringType,
+    NoneType,
+    StreamType(BTreeMap<String, BTreeMap<String, Vec<KeyValueData>>>)
+}
+#[derive(Debug, Clone)]
 pub struct KeyValueData {
     key: String,
     value: String,
     expires: bool,
     _inserted_at: Instant, // time stamp when this key was inserted
     expiring_at: Instant,
+    keyvalue_type: KeyValueType,
 }
 
 impl KeyValueData {
@@ -91,6 +149,7 @@ impl KeyValueData {
             expires,
             _inserted_at: now,
             expiring_at: now + Duration::from_millis(expiry),
+            keyvalue_type: StringType,
         }
     }
 

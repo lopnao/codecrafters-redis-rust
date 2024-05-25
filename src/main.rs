@@ -16,12 +16,13 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::sync::mpsc::{Receiver, Sender};
 use commands::server_info;
 use db::KeyValueData;
-use crate::commands::{cmd_keys, get_type, server_config, wait_or_replicas};
+use crate::commands::{cmd_keys, cmd_xadd, get_type, server_config, wait_or_replicas};
 use crate::connect::{configure_replica, connect_to_master, psync, send_rdb_base64_to_hex};
-use crate::db::{data_get, data_set, data_set_from_rdb, key_expiry_thread};
+use crate::db::{data_get, data_set, data_set_from_rdb, key_expiry_thread, StreamDB};
 use crate::rdb::read_rdb_file;
 use crate::resp::RespHandler;
 use crate::resp::CommandRedis::{GoodAckFromReplica, UpdateReplicasCount};
+use crate::resp::Value::NullBulkString;
 
 mod resp;
 mod db;
@@ -81,6 +82,7 @@ struct RedisServer {
     pub dbfilename: Option<String>,
     pub data: Arc<Mutex<HashMap<String, KeyValueData>>>,
     pub exp_heap: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>,
+    pub stream_db: Arc<Mutex<StreamDB>>,
 }
 
 impl RedisServer {
@@ -122,6 +124,7 @@ impl RedisServer {
 
         let data: Arc<Mutex<HashMap<String, KeyValueData>>> = Arc::new(Mutex::new(HashMap::new()));
         let exp_heap: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>> = Arc::new(Mutex::new(BinaryHeap::new()));
+        let stream_db: Arc<Mutex<StreamDB>> = Arc::new(Mutex::new(StreamDB::init()));
 
         if !dir.is_none() & !dbfilename.is_none() {
             let path_to_db_filename = dir.clone().unwrap() + "/" + &dbfilename.clone().unwrap();
@@ -158,6 +161,7 @@ impl RedisServer {
             dbfilename,
             data,
             exp_heap,
+            stream_db
         })
     }
 
@@ -208,6 +212,9 @@ async fn main() {
     };
     let exp_heap: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>> = {
         server_info_clone.lock().unwrap().exp_heap.clone()
+    };
+    let stream_db: Arc<Mutex<StreamDB>> = {
+        server_info_clone.lock().unwrap().stream_db.clone()
     };
 
     // Spawning the cleaning thread for the data with expiry
@@ -263,12 +270,13 @@ async fn main() {
                 tokio::spawn({
                     let server_info_clone = server_info.clone();
                     let data1 = Arc::clone(&data);
+                    let stream_data = stream_db.clone();
                     let exp_heap1 = Arc::clone(&exp_heap);
                     let slave_tx_clone = slave_tx.clone();
                     let watch_rx_clone = watch_rx.clone();
                     let watch_replicas_count_rx_clone = watch_replicas_count_rx.clone();
                     async move {
-                        handle_conn(stream, server_info_clone, data1, exp_heap1, slave_tx_clone, watch_rx_clone, watch_replicas_count_rx_clone).await
+                        handle_conn(stream, server_info_clone, data1, stream_data, exp_heap1, slave_tx_clone, watch_rx_clone, watch_replicas_count_rx_clone).await
                     }
                  });
 
@@ -332,6 +340,7 @@ async fn propagate_to_replicas(mut master_receiver: Receiver<Value>,
 
 async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer>>,
                      data1: Arc<Mutex<HashMap<String, KeyValueData>>>,
+                     stream_db_clone: Arc<Mutex<StreamDB>>,
                      exp_heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>,
                      slave_tx: Sender<Value>, watch_rx: watch::Receiver<broadcast::Receiver<Value>>,
                      watch_replicas_count_rx_clone: watch::Receiver<usize>) {
@@ -367,8 +376,15 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                 },
                 "type"   => {
                     let data2 = Arc::clone(&data1);
-                    get_type(args, data2)
+                    let stream_data = stream_db_clone.clone();
+                    get_type(args, data2, stream_data)
                 },
+                "xadd"  => {
+                    let stream_data = stream_db_clone.clone();
+                    if let Ok(value) = cmd_xadd(args, stream_data) {
+                        value
+                    } else { NullBulkString() }
+                }
                 "info"  => {
                     server_info(server_info_clone.clone(), args)
                 },
