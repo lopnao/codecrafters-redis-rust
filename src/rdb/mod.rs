@@ -52,6 +52,7 @@ impl RDBFileStruct {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_map(self) -> Result<HashMap<String, KeyValueData>, RDBError> {
 
         Err(ParsingError("error while parsing the database from file to the hashmap in memory.".to_string()))
@@ -70,6 +71,7 @@ impl MagicField {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_version(&self) -> u8 {
         self.version
     }
@@ -210,6 +212,7 @@ impl FromHex for KeyValueField {
             // Reading the value type
             let value_type_byte = data[cur_ind];
             cur_ind += 1;
+            #[allow(unused_assignments)]
             let mut value = NoneValue;
 
             // Reading the key
@@ -289,6 +292,7 @@ pub enum StringEncodedValue {
     StringEncodedI8(i8),
     StringEncodedI16(i16),
     StringEncodedI32(i32),
+    #[allow(dead_code)]
     LZFStringEncodedString(String),
     ListEncodedString(Vec<StringEncodedValue>),
     SortedSetEncodedString(BTreeMap<StringEncodedValue, StringEncodedValue>),
@@ -303,8 +307,8 @@ impl StringEncodedValue {
             StringEncodedI16(i) => { format!("{i}") }
             StringEncodedI32(i) => { format!("{i}") }
             StringEncodedValue::LZFStringEncodedString(s) => { s }
-            ListEncodedString(v) => { "todo!".to_string() }
-            SortedSetEncodedString(map) => { "todo!".to_string() }
+            ListEncodedString(_v) => { "todo!".to_string() }
+            SortedSetEncodedString(_map) => { "todo!".to_string() }
             NoneValue => { "".to_string() }
         }
     }
@@ -418,6 +422,7 @@ fn read_length(data: &[u8]) -> Result<(usize, i32, usize), RDBError> {
     };
 }
 
+#[allow(dead_code)]
 fn read_until_specific_byte(data: &[u8], byte_to_search: u8) -> Result<usize, RDBError> {
     for i in 0..(data.len() - 1) {
         if data[i + 1] == byte_to_search {
@@ -436,6 +441,7 @@ fn read_until_specific_byte_is_minimum_of(data: &[u8], byte_to_search: u8) -> Re
     return Err(ParsingError(format!("The byte : {:x} is not in buffer", byte_to_search)));
 }
 
+#[allow(dead_code)]
 fn read_value_type(data: &[u8]) -> Result<(StringEncodedValue, usize), RDBError> {
     match data[0] {
         0 => { return Ok((StringEncodedString("".to_string()), 1)); }
@@ -550,6 +556,7 @@ pub async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize),
     println!("[DEBUG] :::::::::: RDBFile ReadBuffer ::::::::::");
     println!("{:x?}", data);
 
+    #[allow(unused_assignments)]
     let mut magic_field = None;
     // Read Magic Field
     let (magic_field_to_add, bytes_consumed) = MagicField::from_hex(&data[..9])?;
@@ -557,6 +564,7 @@ pub async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize),
     cur_ind += bytes_consumed;
     println!("Magic Field has been read: {:?}", magic_field);
 
+    #[allow(unused_assignments)]
     let mut auxiliary_field = None;
     // Read Auxiliary Field if present
     let (auxiliary_field_if_present, bytes_consumed) = if data[cur_ind] == 250 { AuxiliaryField::from_hex(&data[cur_ind..])? } else { (None, 0) };
@@ -567,7 +575,9 @@ pub async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize),
     }
 
     // Read the Database number if present
+    #[allow(unused_variables, unused_assignments)]
     let mut database_number = 0;
+    #[allow(unused_assignments)]
     if data[cur_ind] == 254 {
         database_number = data[cur_ind + 1];
         cur_ind += 2;
@@ -639,6 +649,7 @@ pub async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize),
 }
 
 
+#[allow(dead_code)]
 fn read_hex_from_string(s: &str) -> Result<Vec<u8>, ParseIntError> {
     let mut ans = vec![];
     // let s = "fa 08 75 73  65 64 2d 6d 65 6d c2 b0 c4 10 00";
