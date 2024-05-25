@@ -90,7 +90,7 @@ impl StreamDB {
         }
     }
 
-    pub fn add_stream_key(mut self, key: String) {
+    pub fn add_stream_key(&mut self, key: String) {
         self.streams.insert(key, BTreeMap::new());
     }
 
