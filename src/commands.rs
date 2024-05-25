@@ -142,8 +142,12 @@ pub fn cmd_xadd(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Val
             i += 2;
         }
         if !key_values.is_empty() {
+            println!("Trying to add to stream key_values = {:?}", key_values);
             {
                 let mut stream_db_lock = stream_db.lock().unwrap();
+                if stream_db_lock.get_stream_key(stream_key) == None {
+                    stream_db_lock.add_stream_key(stream_key.clone());
+                }
                 stream_db_lock.add_id(stream_key.clone(), id, key_values.clone())?;
             }
             return Ok(Value::SimpleString(format!("{}-{}", id.0, id.1)));
