@@ -69,11 +69,14 @@ impl MagicField {
             version
         }
     }
+
+    pub fn get_version(&self) -> u8 {
+        self.version
+    }
 }
 
 trait ToHex {
     fn to_hex(&self) -> Vec<u8>;
-    fn get_version(&self) -> u8;
 }
 
 trait FromHex {
@@ -92,18 +95,17 @@ impl ToHex for MagicField {
         prefix.append(&mut version_bytes);
         prefix
     }
-
-    fn get_version(&self) -> u8 {
-        self.version
-    }
 }
 
 impl FromHex for MagicField {
     type Item = MagicField;
-    fn from_hex(bytes_vec: &[u8]) -> Result<(Option<Self::Item>, usize), RDBError> {
-        match bytes_vec.len() {
+    fn from_hex(data_magic: &[u8]) -> Result<(Option<Self::Item>, usize), RDBError> {
+        match data_magic.len() {
             9 => {
-                let version_bytes = &bytes_vec[5..];
+                if &data_magic[..5] != [82, 69, 68, 73, 83] {
+                    return Err(ParsingError("The magic 'REDIS' is not there !".to_string()))
+                }
+                let version_bytes = &data_magic[5..];
                 if let Ok(version_str) = String::from_utf8(version_bytes.to_vec()) {
                     if let Ok(version_u8) = u8::from_str_radix(version_str.as_str(), 10) {
                         return Ok((Some(MagicField::new(version_u8)), 9));
@@ -138,7 +140,7 @@ impl FromHex for AuxiliaryField {
             match data[cur_ind] {
                 250         => { cur_ind += 1; }
                 (251..=255) => { return Ok((Some(AuxiliaryField { keys, values }), cur_ind)); }
-                _           => { return Err(ParsingError("First byte of parsing loop is not 0xfe".to_string())); }
+                _           => { return Err(ParsingError("First byte of parsing loop is not (0xfa - 0xff)".to_string())); }
             }
             // Reading the key
             let (key_to_add, byte_consumed_by_key) = read_simple_encoded_string(&data[cur_ind..])?;
@@ -597,6 +599,8 @@ pub async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize),
         key_value_field = key_value_field_if_present;
         cur_ind += bytes_consumed;
     }
+
+    //todo: faire le checksum
 
     Ok((RDBFileStruct::new(magic_field, auxiliary_field, vec![key_value_field], cur_ind), cur_ind))
 }
