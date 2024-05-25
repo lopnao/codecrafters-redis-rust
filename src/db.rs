@@ -94,7 +94,7 @@ impl KeyValueData {
         }
     }
 
-    fn get_value(&self) -> String {
+    pub fn get_value(&self) -> String {
         self.value.clone()
     }
 

@@ -16,7 +16,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::sync::mpsc::{Receiver, Sender};
 use commands::server_info;
 use db::KeyValueData;
-use crate::commands::{cmd_keys, server_config, wait_or_replicas};
+use crate::commands::{cmd_keys, get_type, server_config, wait_or_replicas};
 use crate::connect::{configure_replica, connect_to_master, psync, send_rdb_base64_to_hex};
 use crate::db::{data_get, data_set, data_set_from_rdb, key_expiry_thread};
 use crate::rdb::read_rdb_file;
@@ -364,7 +364,10 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                 "get"   => {
                     let data2 = Arc::clone(&data1);
                     data_get(args, data2)
-
+                },
+                "type"   => {
+                    let data2 = Arc::clone(&data1);
+                    get_type(args, data2)
                 },
                 "info"  => {
                     server_info(server_info_clone.clone(), args)
