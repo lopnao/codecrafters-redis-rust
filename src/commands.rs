@@ -108,6 +108,21 @@ pub fn cmd_keys(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>
     }
 }
 
+pub fn get_type(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>) -> Value {
+    if args.is_empty() { return Value::NullBulkString(); }
+    let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
+    let local_data = data1.lock().unwrap();
+    if let Some(arg) = args.first() {
+        if let Some(key_value) = local_data.get(arg) {
+            if let Some(value) = key_value.get_value() {
+                return Value::SimpleString("string".to_string());
+            }
+        }
+    }
+
+    Value::SimpleString("none".to_string())
+}
+
 
 pub async fn wait_or_replicas(args: Vec<Value>, mut watch_replicas_count_rx: watch::Receiver<usize>) -> Value {
     let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
