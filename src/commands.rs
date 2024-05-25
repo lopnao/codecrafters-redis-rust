@@ -113,10 +113,8 @@ pub fn get_type(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>
     let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
     let local_data = data1.lock().unwrap();
     if let Some(arg) = args.first() {
-        if let Some(key_value) = local_data.get(arg) {
-            if let Some(value) = key_value.get_value() {
+        if let Some(_key_value) = local_data.get(arg) {
                 return Value::SimpleString("string".to_string());
-            }
         }
     }
 
