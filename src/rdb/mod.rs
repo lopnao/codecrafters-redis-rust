@@ -250,16 +250,25 @@ impl FromHex for KeyValueField {
                 1   => {
                     let now_in_millis = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_millis();
                     if let Some(time_in_sec) = expiry_time_in_sec {
-                        let temp = time_in_sec.checked_sub(now_in_millis as u32 / 1000).unwrap();
-                        expiry_time_in_sec = Some(temp);
+                        if time_in_sec * 1000 < now_in_millis as u32 {
+                            expiry_time_in_sec = None;
+                        } else {
+                            let temp = time_in_sec.checked_sub(now_in_millis as u32 / 1000).unwrap();
+                            expiry_time_in_sec = Some(temp);
+                        }
                     }
                 }
                 2   => {
                     let now_in_millis = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_millis();
                     if let Some(time_in_millisec) = expiry_time_in_millisec {
                         println!("timestamp_now_in_millis = {:?} // expiry_in_millis = {:?}", now_in_millis, time_in_millisec);
-                        let temp = time_in_millisec.checked_sub(now_in_millis as u64).unwrap();
-                        expiry_time_in_millisec = Some(temp);
+                        if time_in_millisec <= now_in_millis as u64 {
+                            expiry_time_in_millisec = None;
+                        } else {
+                            let temp = time_in_millisec.checked_sub(now_in_millis as u64).unwrap();
+                            expiry_time_in_millisec = Some(temp);
+                        }
+
                     }
                 }
                 _   => {}
@@ -321,15 +330,19 @@ impl KeyValuePair {
         }
     }
 
-    pub fn to_data1_map(self) -> KeyValueData {
+    pub fn to_data1_map(self) -> Option<KeyValueData> {
         let expiring_at = if self.expiry == 2 {
-            self.expiry_time_in_millisec.unwrap()
+            if let Some(t_in_millis) = self.expiry_time_in_millisec {
+                t_in_millis
+            } else { return None; }
         } else if self.expiry == 1 {
-            self.expiry_time_in_sec.unwrap() as u64 * 1000
+            if let Some(t_in_sec) = self.expiry_time_in_sec {
+                t_in_sec as u64 * 1000
+            } else { return None; }
         } else { 0 };
         let value = self.value.to_string();
         let key = self.key.to_string();
-        KeyValueData::new(key, value, expiring_at)
+        Some(KeyValueData::new(key, value, expiring_at))
     }
 }
 

@@ -41,11 +41,16 @@ pub fn data_set_from_rdb(rdbfile_struct: RDBFileStruct, data1: Arc<Mutex<HashMap
             for key in map.keys().cloned() {
                 if let Some(value) = map.get(&key) {
                     let key_value_data = value.clone().to_data1_map();
-                    println!("Inserting : {:?} : {:?}", key.clone().to_string(), key_value_data);
-                    if key_value_data.expires {
-                        heap1.push((Reverse(key_value_data.expiring_at.clone()), key_value_data.key.clone()));
+                    if let Some(key_value_to_insert) = key_value_data {
+                        println!("Inserting : {:?} : {:?}", key.clone().to_string(), key_value_to_insert);
+                        if key_value_to_insert.expires {
+                            heap1.push((Reverse(key_value_to_insert.expiring_at.clone()), key_value_to_insert.key.clone()));
+                        }
+                        data1.insert(key.to_string(), key_value_to_insert);
+                    } else {
+                        println!("Not inserting a Key_Value_Data because expiry_time is in the past !")
                     }
-                    data1.insert(key.to_string(), key_value_data);
+
                 }
             }
         }
