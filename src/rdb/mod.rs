@@ -12,6 +12,8 @@ use crate::rdb::StringEncodedValue::{StringEncodedString, StringEncodedI8, ListE
 pub enum RDBError {
     #[error("`{0}`")]
     ParsingError(String),
+    #[error("`{0}`")]
+    StreamEntryError(String),
     // #[error("i/o error")]
     // IORDBError(#[from] io::Error),
 }

@@ -15,6 +15,7 @@ pub enum Value {
     SimpleCommand(CommandRedis),
 }
 
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum CommandRedis {
