@@ -188,17 +188,19 @@ impl FromHex for KeyValueField {
             // Reading the expiry if it exists
             match data[cur_ind] {
                 253         => {
+                    println!("Expiry buffer : {:?}", data[cur_ind..cur_ind + 5].to_vec());
                     expiry = 1;
-                    expiry_time_in_sec = Some(((data[cur_ind + 1] as u32) << (3 * 8)) + ((data[cur_ind + 2] as u32) << (2 * 8)) + ((data[cur_ind + 3] as u32) << (1 * 8)) + ((data[cur_ind + 4] as u32) << (0 * 8)));
+                    let temp_buffer = [data[cur_ind + 1], data[cur_ind + 2], data[cur_ind + 3], data[cur_ind + 4]];
+                    expiry_time_in_sec = Option::from(u32::from_ne_bytes(temp_buffer));
                     cur_ind += 5;
                 },
                 252         => {
+                    println!("Expiry buffer : {:?}", data[cur_ind..cur_ind + 9].to_vec());
+                    
                     expiry = 2;
-                    expiry_time_in_millisec = Some(
-                        ((data[cur_ind + 1] as u64) << (7 * 8)) +((data[cur_ind + 2] as u64) << (6 * 8)) + ((data[cur_ind + 3] as u64) << (5 * 8)) +
-                            ((data[cur_ind + 4] as u64) << (4 * 8)) + ((data[cur_ind + 5] as u64) << (3 * 8)) + ((data[cur_ind + 6] as u64) << (2 * 8)) +
-                            ((data[cur_ind + 7] as u64) << (1 * 8)) + ((data[cur_ind + 8] as u64) << (0 * 8))
-                    );
+                    let temp_buffer = [data[cur_ind + 1], data[cur_ind + 2], data[cur_ind + 3],
+                        data[cur_ind + 4],data[cur_ind + 5], data[cur_ind + 6], data[cur_ind + 7], data[cur_ind + 8]];
+                    expiry_time_in_millisec = Option::from(u64::from_ne_bytes(temp_buffer));
                     cur_ind += 9;
                 },
                 (254..=255) => { return Ok((Some(KeyValueField { map }), cur_ind)); }
@@ -255,6 +257,7 @@ impl FromHex for KeyValueField {
                 2   => {
                     let now_in_millis = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_millis();
                     if let Some(time_in_millisec) = expiry_time_in_millisec {
+                        println!("timestamp_now_in_millis = {:?} // expiry_in_millis = {:?}", now_in_millis, time_in_millisec);
                         let temp = time_in_millisec.checked_sub(now_in_millis as u64).unwrap();
                         expiry_time_in_millisec = Some(temp);
                     }
@@ -351,18 +354,18 @@ fn read_simple_encoded_string(data: &[u8]) -> Result<(StringEncodedValue, usize)
             return match (data[cur_ind - 1] as u32) ^ 192 {
                 0 => {
                     cur_ind += 1;
-                    let int_value = i8::from_be_bytes([data[cur_ind - 1]]);
+                    let int_value = i8::from_ne_bytes([data[cur_ind - 1]]);
 
                     Ok((StringEncodedI8(int_value), cur_ind))
                 },
                 1 => {
                     cur_ind += 2;
-                    let int_value = i16::from_be_bytes([data[cur_ind - 2], data[cur_ind - 1]]);
+                    let int_value = i16::from_ne_bytes([data[cur_ind - 2], data[cur_ind - 1]]);
                     Ok((StringEncodedI16(int_value), cur_ind))
                 },
                 2 => {
                     cur_ind += 4;
-                    let int_value = i32::from_be_bytes([data[cur_ind - 4], data[cur_ind - 3], data[cur_ind - 2], data[cur_ind - 1]]);
+                    let int_value = i32::from_ne_bytes([data[cur_ind - 4], data[cur_ind - 3], data[cur_ind - 2], data[cur_ind - 1]]);
                     Ok((StringEncodedI32(int_value), cur_ind))
                 },
                 _ => { Err(ParsingError("length parsing error ! Last case: Special format.".to_string())) }
@@ -571,15 +574,15 @@ pub async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize),
             -1  => { hash_table_size = first_value as _ }
             0 => {
                 cur_ind += 1;
-                hash_table_size = i8::from_be_bytes([data[cur_ind - 1]]) as _;
+                hash_table_size = i8::from_ne_bytes([data[cur_ind - 1]]) as _;
             },
             1 => {
                 cur_ind += 2;
-                hash_table_size = i16::from_be_bytes([data[cur_ind - 2], data[cur_ind - 1]]) as _;
+                hash_table_size = i16::from_ne_bytes([data[cur_ind - 2], data[cur_ind - 1]]) as _;
             },
             2 => {
                 cur_ind += 4;
-                hash_table_size = i32::from_be_bytes([data[cur_ind - 4], data[cur_ind - 3], data[cur_ind - 2], data[cur_ind - 1]]) as _;
+                hash_table_size = i32::from_ne_bytes([data[cur_ind - 4], data[cur_ind - 3], data[cur_ind - 2], data[cur_ind - 1]]) as _;
             },
             _ => {}
         }
@@ -592,15 +595,15 @@ pub async fn read_rdb_file(path_to_file: &str) -> Result<(RDBFileStruct, usize),
             -1  => { expiry_table_size = first_value as _ }
             0 => {
                 cur_ind += 1;
-                expiry_table_size = i8::from_be_bytes([data[cur_ind - 1]]) as _;
+                expiry_table_size = i8::from_ne_bytes([data[cur_ind - 1]]) as _;
             },
             1 => {
                 cur_ind += 2;
-                expiry_table_size = i16::from_be_bytes([data[cur_ind - 2], data[cur_ind - 1]]) as _;
+                expiry_table_size = i16::from_ne_bytes([data[cur_ind - 2], data[cur_ind - 1]]) as _;
             },
             2 => {
                 cur_ind += 4;
-                expiry_table_size = i32::from_be_bytes([data[cur_ind - 4], data[cur_ind - 3], data[cur_ind - 2], data[cur_ind - 1]]) as _;
+                expiry_table_size = i32::from_ne_bytes([data[cur_ind - 4], data[cur_ind - 3], data[cur_ind - 2], data[cur_ind - 1]]) as _;
             },
             _ => {}
         }
