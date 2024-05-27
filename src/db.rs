@@ -87,7 +87,7 @@ impl Display for StreamValueType {
             StreamValueType::String(s) => { f.write_str(s) }
             StreamValueType::Integer(i) => { f.write_str(i.to_string().as_str()) }
             StreamValueType::UInteger(u) => { f.write_str(u.to_string().as_str()) }
-            StreamValueType::Hashmap(m) => { f.write_str("") }
+            StreamValueType::Hashmap(_m) => { f.write_str("") }
         }
     }
 }
