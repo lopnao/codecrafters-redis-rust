@@ -101,23 +101,32 @@ impl StreamEntity {
         self.last_entry = id;
     }
 
-    pub fn generate_new_id(&self, requested_id : Option<(u64, u64)>) -> Result<(u64, u64), RDBError> {
+    pub fn generate_new_id(&self, requested_id : Option<(u64, Option<u64>)>) -> Result<(u64, u64), RDBError> {
         println!("Generate_new_id command with args : requested_id = {:?}", requested_id);
         println!("Current last_entry = {:?} // Current map = {:?}", self.last_entry, self.stream_map);
         let now_id = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64;
-        let mut id_part2 = 1_64;
-        return if let Some((requested_id_part1, requested_id_part2)) = requested_id {
-            if requested_id_part1 == 0 && requested_id_part2 == 0 {
-                return Err(Id00Error)
+        let mut id_part2 = 0;
+        return if let Some((requested_id_part1, opt_requested_id_part2)) = requested_id {
+            if let Some(requested_id_part2) = opt_requested_id_part2 {
+                if requested_id_part1 == 0 && requested_id_part2 == 0 {
+                    return Err(Id00Error)
+                }
+                if self.last_entry.0 > requested_id_part1 {
+                    return Err(RequestedIdNotAvailable((requested_id_part1, requested_id_part2)));
+                } else if self.last_entry.0 == requested_id_part1 && self.last_entry.1 >= requested_id_part2 {
+                    return Err(RequestedIdNotAvailable((requested_id_part1, requested_id_part2)));
+                } else if requested_id_part1 > now_id {
+                    return Err(RequestedId((requested_id_part1, requested_id_part2)));
+                }
+                Ok((requested_id_part1, requested_id_part2))
+            } else if self.last_entry.0 == requested_id_part1 {
+                Ok((requested_id_part1, self.last_entry.1 + 1))
+            } else if self.last_entry.0 < requested_id_part1 {
+                Ok((requested_id_part1, id_part2))
+            } else {
+                Err(RDBError::IdError)
             }
-            if self.last_entry.0 > requested_id_part1 {
-                return Err(RequestedIdNotAvailable((requested_id_part1, requested_id_part2)));
-            } else if self.last_entry.0 == requested_id_part1 && self.last_entry.1 >= requested_id_part2 {
-                return Err(RequestedIdNotAvailable((requested_id_part1, requested_id_part2)));
-            } else if requested_id_part1 > now_id {
-                return Err(RequestedId((requested_id_part1, requested_id_part2)));
-            }
-            Ok((requested_id_part1, requested_id_part2))
+
         } else if self.last_entry.0 == now_id {
             id_part2 = self.last_entry.1 + 1;
             Ok((now_id, id_part2))
@@ -149,7 +158,7 @@ impl StreamDB {
         None
     }
 
-    pub fn add_id(&mut self, key: String, id: Option<(u64, u64)>, keyvalues: Vec<(String, StreamValueType)>) -> Result<(u64, u64), RDBError> {
+    pub fn add_id(&mut self, key: String, id: Option<(u64, Option<u64>)>, keyvalues: Vec<(String, StreamValueType)>) -> Result<(u64, u64), RDBError> {
         if let Some(mut key_map) = self.streams.get_mut(&key) {
             let id = key_map.generate_new_id(id)?;
 
