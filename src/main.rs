@@ -655,6 +655,9 @@ fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
         Value::SimpleCommand(_s) => {
             Err(anyhow::anyhow!("SimpleCommand value response is todo!"))
         }
+        Value::SimpleError(_e) => {
+            Err(anyhow::anyhow!("SimpleError value response is todo!"))
+        }
         Value::Array(a) => {
             Ok((unpack_bulk_str(a[0].clone())?, a[1..].to_vec()))
         }

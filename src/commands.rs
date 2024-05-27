@@ -5,7 +5,7 @@ use tokio::time::{Instant, timeout, Duration};
 use crate::{RedisServer, unpack_bulk_str};
 use crate::db::{KeyValueData, StreamDB, StreamValueType};
 use crate::rdb::RDBError;
-use crate::rdb::RDBError::StreamEntryError;
+use crate::rdb::RDBError::{NoKeyValueToAdd, StreamEntryError};
 use crate::resp::Value;
 
 
@@ -131,32 +131,45 @@ pub fn cmd_xadd(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Val
     if args.is_empty() { return Err(StreamEntryError("not one arg after the XADD command.".to_string())); }
     let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
     let stream_key = args.first().unwrap();
+    let mut option_id = None;
+    let mut i = 1;
     if let id = args[1].split('-').map(|i_str| i_str.parse::<u64>().unwrap()).collect::<Vec<u64>>() {
-        let id = (id[0], id[1]);
-        let mut i = 2;
-        let mut key_values = vec![];
-        while let Some(key) = args.get(i) {
-            if let Some(value) = args.get(i + 1) {
-                key_values.push((key.clone(), StreamValueType::String(value.clone())));
-            }
-            i += 2;
-        }
-        if !key_values.is_empty() {
-            println!("Trying to add to stream key_values = {:?}", key_values);
-            {
-                let mut stream_db_lock = stream_db.lock().unwrap();
-                if stream_db_lock.get_stream_key(stream_key) == None {
-                    stream_db_lock.add_stream_key(stream_key.clone());
-                }
-                stream_db_lock.add_id(stream_key.clone(), id, key_values.clone())?;
-            }
-            return Ok(Value::SimpleString(format!("{}-{}", id.0, id.1)));
-        }
+        option_id = Some((id[0], id[1]));
+        i = 2;
     }
+    let mut key_values = vec![];
+    while let Some(key) = args.get(i) {
+        if let Some(value) = args.get(i + 1) {
+            key_values.push((key.clone(), StreamValueType::String(value.clone())));
+        }
+        i += 2;
+    }
+    if !key_values.is_empty() {
+        println!("Trying to add to stream key_values = {:?}", key_values);
+        {
+            let mut stream_db_lock = stream_db.lock().unwrap();
+            if stream_db_lock.get_stream_key(stream_key) == None {
+                stream_db_lock.add_stream_key(stream_key.clone());
+            }
+            match stream_db_lock.add_id(stream_key.clone(), option_id, key_values.clone()) {
+                Ok((part1, part2)) => return Ok(Value::SimpleString(format!("{}-{}", part1, part2))),
+                Err(e) => {
+                    return match e {
+                        RDBError::RequestedIdNotAvailable(_) => {
+                            Ok(Value::SimpleError("ERR The ID specified in XADD is equal or smaller than the target stream top item".to_string()))
+                        },
+                        RDBError::Id00Error => {
+                            Ok(Value::SimpleError("ERR The ID specified in XADD must be greater than 0-0".to_string()))
+                        }
+                        _ => Err(RDBError::IdError)
+                    }
+                }
+            }
+            // return Ok(Value::SimpleString(format!("{}-{}", generated_id.0, generated_id.1)));
+        }
 
-
-
-    Err(StreamEntryError("stream XADD command error".to_string()))
+    }
+    Err(NoKeyValueToAdd)
 }
 
 

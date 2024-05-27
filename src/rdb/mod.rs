@@ -14,6 +14,18 @@ pub enum RDBError {
     ParsingError(String),
     #[error("`{0}`")]
     StreamEntryError(String),
+    #[error("the requested id : `{0:?}` is not available for the stream.")]
+    RequestedId((u64, u64)),
+    #[error("the requested id : `{0:?}` is not available for the stream.")]
+    RequestedIdNotAvailable((u64, u64)),
+    #[error("there is a last entry.")]
+    InvalidTimeId,
+    #[error("general error regarding new id to stream.")]
+    IdError,
+    #[error("requested id for stream need to be >= 0-1")]
+    Id00Error,
+    #[error("nothing to add with XADD command, parsing error ?")]
+    NoKeyValueToAdd,
     // #[error("i/o error")]
     // IORDBError(#[from] io::Error),
 }

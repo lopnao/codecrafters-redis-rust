@@ -2,10 +2,11 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::SystemTime;
 use tokio::time::{Instant, Duration};
 use crate::db::KeyValueType::StringType;
 use crate::rdb::{RDBError, RDBFileStruct};
-use crate::rdb::RDBError::StreamEntryError;
+use crate::rdb::RDBError::{Id00Error, RequestedId, RequestedIdNotAvailable, StreamEntryError};
 use crate::resp::Value;
 use crate::unpack_bulk_str;
 
@@ -79,8 +80,55 @@ pub enum StreamValueType {
     Hashmap(BTreeMap<String, StreamValueType>)
 }
 
+pub struct StreamEntity {
+    stream_map : BTreeMap<(u64, u64), Vec<(String, StreamValueType)>>,
+    last_entry : (u64, u64),
+}
+
+impl StreamEntity {
+    pub fn init() -> Self {
+        Self {
+            stream_map: BTreeMap::new(),
+            last_entry: (0, 0),
+        }
+    }
+
+    pub fn check_last_entry(self) -> (u64, u64) {
+        self.last_entry
+    }
+
+    pub fn change_last_entry(&mut self, id: (u64, u64)) {
+        self.last_entry = id;
+    }
+
+    pub fn generate_new_id(&self, requested_id : Option<(u64, u64)>) -> Result<(u64, u64), RDBError> {
+        println!("Generate_new_id command with args : requested_id = {:?}", requested_id);
+        println!("Current last_entry = {:?} // Current map = {:?}", self.last_entry, self.stream_map);
+        let now_id = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64;
+        let mut id_part2 = 1_64;
+        return if let Some((requested_id_part1, requested_id_part2)) = requested_id {
+            if requested_id_part1 == 0 && requested_id_part2 == 0 {
+                return Err(Id00Error)
+            }
+            if self.last_entry.0 > requested_id_part1 {
+                return Err(RequestedIdNotAvailable((requested_id_part1, requested_id_part2)));
+            } else if self.last_entry.0 == requested_id_part1 && self.last_entry.1 >= requested_id_part2 {
+                return Err(RequestedIdNotAvailable((requested_id_part1, requested_id_part2)));
+            } else if requested_id_part1 > now_id {
+                return Err(RequestedId((requested_id_part1, requested_id_part2)));
+            }
+            Ok((requested_id_part1, requested_id_part2))
+        } else if self.last_entry.0 == now_id {
+            id_part2 = self.last_entry.1 + 1;
+            Ok((now_id, id_part2))
+        } else {
+            Ok((now_id, id_part2))
+        }
+    }
+}
+
 pub struct StreamDB {
-    streams: BTreeMap<String, BTreeMap<(u64, u64), Vec<(String, StreamValueType)>>>,
+    streams: BTreeMap<String, StreamEntity>,
 }
 impl StreamDB {
     pub fn init() -> Self {
@@ -91,7 +139,7 @@ impl StreamDB {
     }
 
     pub fn add_stream_key(&mut self, key: String) {
-        self.streams.insert(key, BTreeMap::new());
+        self.streams.insert(key, StreamEntity::init());
     }
 
     pub fn get_stream_key(&self, key: &str) -> Option<()> {
@@ -101,18 +149,23 @@ impl StreamDB {
         None
     }
 
-    pub fn add_id(&mut self, key: String, id: (u64, u64), keyvalues: Vec<(String, StreamValueType)>) -> Result<(), RDBError> {
-        if let mut key_map = self.streams.get(&key).unwrap().to_owned() {
-            key_map.insert(id, keyvalues);
-            return Ok(());
-        }
+    pub fn add_id(&mut self, key: String, id: Option<(u64, u64)>, keyvalues: Vec<(String, StreamValueType)>) -> Result<(u64, u64), RDBError> {
+        if let Some(mut key_map) = self.streams.get_mut(&key) {
+            let id = key_map.generate_new_id(id)?;
 
+            // Insert the key_values and change the last_entry to the current id
+            println!("{:?}", id);
+            key_map.stream_map.insert(id, keyvalues);
+            key_map.change_last_entry(id);
+
+            return Ok(id);
+        }
         Err(StreamEntryError("error while adding id to the stream key".to_string()))
     }
 
     pub fn read_id(self, key: &str, id: (u64, u64)) -> Result<Vec<(String, StreamValueType)>, RDBError> {
         if let Some(key) = self.streams.get(key) {
-            if let Some(id_keyvalues) = key.get(&id) {
+            if let Some(id_keyvalues) = key.stream_map.get(&id) {
                 return Ok(id_keyvalues.clone())
             }
         }
