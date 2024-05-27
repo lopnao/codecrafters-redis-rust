@@ -134,7 +134,6 @@ pub fn cmd_xadd(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Val
     let mut option_id = None;
     let mut i = 1;
     let mut id = args[1].split('-').map(|i_str| i_str.parse::<u64>());
-    println!(":::::::::: Avec le parsing id on a id = {:?}", id);
     if let Some(Ok(id_part1)) = id.next() {
         if let Some(Ok(id_part2)) = id.next() {
             option_id = Some((id_part1, Some(id_part2)));
@@ -174,6 +173,33 @@ pub fn cmd_xadd(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Val
 
     }
     Err(NoKeyValueToAdd)
+}
+
+pub fn cmd_xrange(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Value, RDBError> {
+    if args.is_empty() { return Err(StreamEntryError("not one arg after the XADD command.".to_string())); }
+    let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
+    let stream_key = args.first().unwrap();
+    let mut start_id = args[1].split('-').map(|i_str| i_str.parse::<u64>());
+    let mut starting_range = None;
+    if let Some(Ok(id_part1)) = start_id.next() {
+        if let Some(Ok(id_part2)) = start_id.next() {
+            starting_range = Some((id_part1, Some(id_part2)))
+        } else {
+            starting_range = Some((id_part1, None))
+        }
+    }
+    let mut ending_id = args[2].split('-').map(|i_str| i_str.parse::<u64>());
+    let mut ending_range = None;
+    if let Some(Ok(id_part1)) = ending_id.next() {
+        if let Some(Ok(id_part2)) = ending_id.next() {
+            ending_range = Some((id_part1, Some(id_part2)))
+        } else {
+            ending_range = Some((id_part1, None))
+        }
+    }
+    println!("DEBUG XRANGE :: starting_range = {:?} // ending_range = {:?}", starting_range, ending_range);
+    let stream_db_lock = stream_db.lock().unwrap();
+    stream_db_lock.read_range(stream_key, starting_range.unwrap(), ending_range.unwrap())
 }
 
 

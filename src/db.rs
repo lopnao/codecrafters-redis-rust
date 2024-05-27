@@ -1,5 +1,6 @@
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, BTreeMap, BTreeSet, HashMap};
+use std::collections::{BinaryHeap, BTreeMap, HashMap};
+use std::fmt::{Display, Formatter, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::SystemTime;
@@ -78,6 +79,17 @@ pub enum StreamValueType {
     Integer(i64),
     UInteger(u64),
     Hashmap(BTreeMap<String, StreamValueType>)
+}
+
+impl Display for StreamValueType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StreamValueType::String(s) => { f.write_str(s) }
+            StreamValueType::Integer(i) => { f.write_str(i.to_string().as_str()) }
+            StreamValueType::UInteger(u) => { f.write_str(u.to_string().as_str()) }
+            StreamValueType::Hashmap(m) => { f.write_str("") }
+        }
+    }
 }
 
 pub struct StreamEntity {
@@ -172,7 +184,8 @@ impl StreamDB {
         Err(StreamEntryError("error while adding id to the stream key".to_string()))
     }
 
-    pub fn read_id(self, key: &str, id: (u64, u64)) -> Result<Vec<(String, StreamValueType)>, RDBError> {
+    pub fn read_id(&self, key: &str, id: (u64, u64)) -> Result<Vec<(String, StreamValueType)>, RDBError> {
+
         if let Some(key) = self.streams.get(key) {
             if let Some(id_keyvalues) = key.stream_map.get(&id) {
                 return Ok(id_keyvalues.clone())
@@ -180,6 +193,33 @@ impl StreamDB {
         }
         Err(StreamEntryError("error while reading id of the stream key".to_string()))
     }
+
+    pub fn read_range(&self, key: &str, id_start: (u64, Option<u64>), id_stop: (u64, Option<u64>)) -> Result<Value, RDBError> {
+        let mut ans = vec![];
+        if let Some(key) = self.streams.get(key) {
+            let mut starting_range = (id_start.0, 0);
+            let mut ending_range = (id_stop.0, 0);
+            if let Some(id_start_end) = id_start.1 {
+                starting_range.1 = id_start_end;
+            }
+            if let Some(id_stop_end) = id_stop.1 {
+                ending_range.1 = id_stop_end;
+            }
+
+            for (stream_id, key_values) in key.stream_map.range(starting_range..=ending_range) {
+                let mut vec_id = vec![];
+                for (key, value) in key_values {
+                    vec_id.push(Value::BulkString(format!("{}", key)));
+                    vec_id.push(Value::BulkString(format!("{}", value)));
+                }
+                ans.push(Value::Array(vec![Value::BulkString(format!("{}-{}", stream_id.0, stream_id.1)), Value::Array(vec_id)]))
+            }
+            return Ok(Value::Array(ans));
+        }
+        Err(StreamEntryError("error while reading id of the stream key".to_string()))
+    }
+
+
 }
 
 #[derive(Debug, Clone)]
