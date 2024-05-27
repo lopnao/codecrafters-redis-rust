@@ -194,16 +194,23 @@ impl StreamDB {
         Err(StreamEntryError("error while reading id of the stream key".to_string()))
     }
 
-    pub fn read_range(&self, key: &str, id_start: (u64, Option<u64>), id_stop: (u64, Option<u64>)) -> Result<Value, RDBError> {
+    pub fn read_range(&self, key: &str, id_start: Option<(u64, Option<u64>)>, id_stop: Option<(u64, Option<u64>)>) -> Result<Value, RDBError> {
         let mut ans = vec![];
         if let Some(key) = self.streams.get(key) {
-            let mut starting_range = (id_start.0, 0);
-            let mut ending_range = (id_stop.0, 0);
-            if let Some(id_start_end) = id_start.1 {
-                starting_range.1 = id_start_end;
+            let mut starting_range = (0, 0);
+            let mut ending_range = (0, 0);
+            if let Some(id_start) = id_start {
+                starting_range.0 = id_start.0;
+                if let Some(id_start_end) = id_start.1 {
+                    starting_range.1 = id_start_end;
+                }
             }
-            if let Some(id_stop_end) = id_stop.1 {
-                ending_range.1 = id_stop_end;
+
+            if let Some(id_stop) = id_stop {
+                    ending_range.0 = id_stop.0;
+                if let Some(id_stop_end) = id_stop.1 {
+                    ending_range.1 = id_stop_end;
+                }
             }
 
             for (stream_id, key_values) in key.stream_map.range(starting_range..=ending_range) {

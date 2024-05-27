@@ -199,7 +199,7 @@ pub fn cmd_xrange(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<V
     }
     println!("DEBUG XRANGE :: starting_range = {:?} // ending_range = {:?}", starting_range, ending_range);
     let stream_db_lock = stream_db.lock().unwrap();
-    stream_db_lock.read_range(stream_key, starting_range.unwrap(), ending_range.unwrap())
+    stream_db_lock.read_range(stream_key, starting_range, ending_range)
 }
 
 
