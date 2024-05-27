@@ -198,7 +198,7 @@ impl StreamDB {
         let mut ans = vec![];
         if let Some(key) = self.streams.get(key) {
             let mut starting_range = (0, 0);
-            let mut ending_range = (0, 0);
+            let mut ending_range = key.last_entry;
             if let Some(id_start) = id_start {
                 starting_range.0 = id_start.0;
                 if let Some(id_start_end) = id_start.1 {

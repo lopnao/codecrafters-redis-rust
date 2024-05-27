@@ -188,15 +188,19 @@ pub fn cmd_xrange(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<V
             starting_range = Some((id_part1, None))
         }
     }
-    let mut ending_id = args[2].split('-').map(|i_str| i_str.parse::<u64>());
     let mut ending_range = None;
-    if let Some(Ok(id_part1)) = ending_id.next() {
-        if let Some(Ok(id_part2)) = ending_id.next() {
-            ending_range = Some((id_part1, Some(id_part2)))
-        } else {
-            ending_range = Some((id_part1, None))
+    if args[2].as_str() != "+" {
+        let mut ending_id = args[2].split('-').map(|i_str| i_str.parse::<u64>());
+
+        if let Some(Ok(id_part1)) = ending_id.next() {
+            if let Some(Ok(id_part2)) = ending_id.next() {
+                ending_range = Some((id_part1, Some(id_part2)))
+            } else {
+                ending_range = Some((id_part1, None))
+            }
         }
     }
+
     println!("DEBUG XRANGE :: starting_range = {:?} // ending_range = {:?}", starting_range, ending_range);
     let stream_db_lock = stream_db.lock().unwrap();
     stream_db_lock.read_range(stream_key, starting_range, ending_range)
