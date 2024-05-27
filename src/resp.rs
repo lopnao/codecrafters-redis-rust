@@ -13,6 +13,7 @@ pub enum Value {
     Array(Vec<Value>),
     SimpleInteger(i64),
     SimpleCommand(CommandRedis),
+    SimpleError(String),
 }
 
 
@@ -130,6 +131,7 @@ impl Value {
             },
             Value::Array(a) => format!("{}", a.iter().fold(format!("*{}\r\n", a.len()), |acc, s| format!("{}{}", acc, s.clone().serialize()),)),
             Value::SimpleInteger(i) => format!(":{}\r\n", i),
+            Value::SimpleError(e) => format!("-{}\r\n", e),
             _ => "".to_string(),
         }
     }
@@ -269,7 +271,7 @@ impl RespHandler {
 
 fn parse_message(buffer: BytesMut) -> Result<(Value, usize)> {
 
-    //println!("TEMP buffer = {:?}", buffer);
+    // println!("TEMP buffer = {:?}", buffer);
     match buffer[0] as char {
         '+' => parse_simple_string(buffer),
         '*' => parse_array(buffer),
