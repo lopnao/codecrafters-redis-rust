@@ -133,8 +133,12 @@ pub fn cmd_xadd(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Val
     let stream_key = args.first().unwrap();
     let mut option_id = None;
     let mut i = 1;
-    if let id = args[1].split('-').map(|i_str| i_str.parse::<u64>().unwrap()).collect::<Vec<u64>>() {
-        option_id = Some((id[0], id[1]));
+    let mut id = args[1].split('-').map(|i_str| i_str.parse::<u64>());
+    println!(":::::::::: Avec le parsing id on a id = {:?}", id);
+    if let Some(Ok(id_part1)) = id.next() {
+        if let Some(Ok(id_part2)) = id.next() {
+            option_id = Some((id_part1, Some(id_part2)));
+        } else { option_id = Some((id_part1, None)); }
         i = 2;
     }
     let mut key_values = vec![];
@@ -151,10 +155,10 @@ pub fn cmd_xadd(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Val
             if stream_db_lock.get_stream_key(stream_key) == None {
                 stream_db_lock.add_stream_key(stream_key.clone());
             }
-            match stream_db_lock.add_id(stream_key.clone(), option_id, key_values.clone()) {
-                Ok((part1, part2)) => return Ok(Value::SimpleString(format!("{}-{}", part1, part2))),
+            return match stream_db_lock.add_id(stream_key.clone(), option_id, key_values.clone()) {
+                Ok((part1, part2)) => Ok(Value::SimpleString(format!("{}-{}", part1, part2))),
                 Err(e) => {
-                    return match e {
+                    match e {
                         RDBError::RequestedIdNotAvailable(_) => {
                             Ok(Value::SimpleError("ERR The ID specified in XADD is equal or smaller than the target stream top item".to_string()))
                         },
