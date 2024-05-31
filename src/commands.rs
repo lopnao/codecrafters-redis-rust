@@ -229,17 +229,22 @@ pub async fn cmd_xread(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Res
                 }
             }
             arg_stream_or_id     => {
-                if arg_stream_or_id.contains("-") {
-                    let mut id_parsed = arg_stream_or_id.split('-').map(|i_str| i_str.parse::<u64>());
-                    let mut starting_range = None;
-                    if let Some(Ok(id_part1)) = id_parsed.next() {
-                        if let Some(Ok(id_part2)) = id_parsed.next() {
-                            starting_range = Some((id_part1, Some(id_part2 + 1)));
-                        } else {
-                            starting_range = Some((id_part1, None));
+                if arg_stream_or_id.contains("-") | arg_stream_or_id.contains("$") {
+                    if arg_stream_or_id.contains("$") {
+                        ids.push(Some((u64::MAX, Some(u64::MAX))));
+                    } else {
+                        let mut id_parsed = arg_stream_or_id.split('-').map(|i_str| i_str.parse::<u64>());
+                        let mut starting_range = None;
+                        if let Some(Ok(id_part1)) = id_parsed.next() {
+                            if let Some(Ok(id_part2)) = id_parsed.next() {
+                                starting_range = Some((id_part1, Some(id_part2 + 1)));
+                            } else {
+                                starting_range = Some((id_part1, None));
+                            }
+                            ids.push(starting_range)
                         }
-                        ids.push(starting_range)
                     }
+
                 } else {
                     streams.push(arg);
                 }
@@ -268,7 +273,7 @@ pub async fn cmd_xread(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Res
     for (i, &stream_key) in streams.iter().enumerate() {
 
         println!("DEBUG :: i = {:?} // stream_key = {:?} // ids = {:?} // wait_time_0 = {:?}", i, stream_key, ids, wait_time_0);
-        let starting_range = ids[i];
+        let mut starting_range = ids[i];
 
         if wait_time_0 {
             // Waiting for a new id which will be >= than starting range
@@ -276,7 +281,13 @@ pub async fn cmd_xread(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Res
                 let stream_db_lock = stream_db.lock().unwrap();
                 stream_db_lock.get_last_entry_for_stream(stream_key)
             } {
-                if let Some((id1, Some(id2))) = starting_range {
+                if let Some((mut id1, Some(mut id2))) = starting_range {
+                    if (id1, id2) == (u64::MAX, u64::MAX) {
+                        id1 = last_entry.0;
+                        id2 = last_entry.1 + 1;
+                        println!("DEBUG :: on a transformé starting_range = {:?}", (id1, id2));
+                        starting_range = Some((id1, Some(id2)));
+                    }
                     if last_entry < (id1, id2) {
                         if let Ok(mut broadcast_receiver) = {
                             let stream_db_lock = stream_db.lock().unwrap();
@@ -288,6 +299,7 @@ pub async fn cmd_xread(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Res
                                     last_entry = last_entry_rcv;
                                 }
                             }
+                            println!("On sort du while loop avec last_entry = {:?}", last_entry);
                         }
                     }
                 }
