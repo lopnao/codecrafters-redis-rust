@@ -176,7 +176,7 @@ pub fn cmd_xadd(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Val
 }
 
 pub fn cmd_xrange(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Value, RDBError> {
-    if args.is_empty() { return Err(StreamEntryError("not one arg after the XADD command.".to_string())); }
+    if args.is_empty() { return Err(StreamEntryError("not one arg after the XRANGE command.".to_string())); }
     let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
     let stream_key = args.first().unwrap();
     let mut start_id = args[1].split('-').map(|i_str| i_str.parse::<u64>());
@@ -204,6 +204,45 @@ pub fn cmd_xrange(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<V
     println!("DEBUG XRANGE :: starting_range = {:?} // ending_range = {:?}", starting_range, ending_range);
     let stream_db_lock = stream_db.lock().unwrap();
     stream_db_lock.read_range(stream_key, starting_range, ending_range)
+}
+
+pub fn cmd_xread(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Value, RDBError> {
+    if args.is_empty() { return Err(StreamEntryError("not one arg after the XREAD command.".to_string())); }
+    let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
+    let mut streams = vec![];
+    let mut i = 0;
+    let mut starting_range = None;
+    let ending_range = None;
+    for arg in &args {
+        i += 1;
+        if arg.contains("-") {
+            break;
+        } else {
+            streams.push(arg);
+        }
+    }
+
+    if let Some(start_after_id) = args.get(i) {
+        let mut id_parsed = start_after_id.split('-').map(|i_str| i_str.parse::<u64>());
+        if let Some(Ok(id_part1)) = id_parsed.next() {
+            if let Some(Ok(id_part2)) = id_parsed.next() {
+                starting_range = Some((id_part1, Some(id_part2 + 1)));
+            } else {
+                starting_range = Some((id_part1, None));
+            }
+        }
+    }
+
+    let mut res = vec![];
+    let stream_db_lock = stream_db.lock().unwrap();
+    for stream_key in streams {
+        println!("DEBUG XREAD :: starting_range = {:?} // stream_key = {:?}", starting_range, stream_key);
+        if let Ok(value) = stream_db_lock.read_range(stream_key, starting_range, ending_range) {
+            res.push(Value::Array(vec![Value::BulkString(stream_key.clone()), value]));
+        }
+    }
+
+    Ok(Value::Array(res))
 }
 
 
