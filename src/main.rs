@@ -16,7 +16,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::sync::mpsc::{Receiver, Sender};
 use commands::server_info;
 use db::KeyValueData;
-use crate::commands::{cmd_keys, cmd_xadd, cmd_xrange, get_type, server_config, wait_or_replicas};
+use crate::commands::{cmd_keys, cmd_xadd, cmd_xrange, cmd_xread, get_type, server_config, wait_or_replicas};
 use crate::connect::{configure_replica, connect_to_master, psync, send_rdb_base64_to_hex};
 use crate::db::{data_get, data_set, data_set_from_rdb, key_expiry_thread, StreamDB};
 use crate::rdb::read_rdb_file;
@@ -390,7 +390,12 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     if let Ok(response_value) = cmd_xrange(args, stream_data) {
                         response_value
                     } else { Value::NullBulkString() }
-
+                },
+                "xread"    => {
+                    let stream_data = stream_db_clone.clone();
+                    if let Ok(response_value) = cmd_xread(args, stream_data) {
+                        response_value
+                    } else { Value::NullBulkString() }
                 },
                 "info"  => {
                     server_info(server_info_clone.clone(), args)
