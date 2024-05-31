@@ -4,6 +4,7 @@ use std::fmt::{Display, Formatter, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::SystemTime;
+use tokio::sync;
 use tokio::time::{Instant, Duration};
 use crate::db::KeyValueType::StringType;
 use crate::rdb::{RDBError, RDBFileStruct};
@@ -95,22 +96,36 @@ impl Display for StreamValueType {
 pub struct StreamEntity {
     stream_map : BTreeMap<(u64, u64), Vec<(String, StreamValueType)>>,
     last_entry : (u64, u64),
+    broadcaster_sender: sync::broadcast::Sender<(u64, u64)>,
+    broadcaster_receiver: sync::broadcast::Receiver<(u64, u64)>,
 }
 
 impl StreamEntity {
     pub fn init() -> Self {
+        let (tx, mut rx1) = sync::broadcast::channel(16);
         Self {
             stream_map: BTreeMap::new(),
             last_entry: (0, 0),
+            broadcaster_sender: tx,
+            broadcaster_receiver: rx1,
         }
     }
 
-    pub fn check_last_entry(self) -> (u64, u64) {
+    pub fn check_last_entry(&self) -> (u64, u64) {
         self.last_entry
+    }
+
+    pub fn get_receiver(&self) -> sync::broadcast::Receiver<(u64, u64)> {
+        self.broadcaster_receiver.resubscribe()
+    }
+
+    fn broadcast_last_entry(&self) {
+        let _ = self.broadcaster_sender.send(self.last_entry);
     }
 
     pub fn change_last_entry(&mut self, id: (u64, u64)) {
         self.last_entry = id;
+        self.broadcast_last_entry();
     }
 
     pub fn generate_new_id(&self, requested_id : Option<(u64, Option<u64>)>) -> Result<(u64, u64), RDBError> {
@@ -190,6 +205,20 @@ impl StreamDB {
             if let Some(id_keyvalues) = key.stream_map.get(&id) {
                 return Ok(id_keyvalues.clone())
             }
+        }
+        Err(StreamEntryError("error while reading id of the stream key".to_string()))
+    }
+
+    pub fn get_last_entry_for_stream(&self, key: &str) -> Result<(u64, u64), RDBError> {
+        if let Some(key) = self.streams.get(key) {
+            return Ok(key.last_entry)
+        }
+        Err(StreamEntryError("error while reading id of the stream key".to_string()))
+    }
+
+    pub fn get_broadcaster_receiver(&self, key: &str) -> Result<sync::broadcast::Receiver<(u64, u64)>, RDBError> {
+        if let Some(key) = self.streams.get(key) {
+            return Ok(key.broadcaster_receiver.resubscribe())
         }
         Err(StreamEntryError("error while reading id of the stream key".to_string()))
     }
