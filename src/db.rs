@@ -212,6 +212,9 @@ impl StreamDB {
                     ending_range.1 = id_stop_end;
                 }
             }
+            if starting_range > ending_range {
+                return Ok(Value::NullBulkString());
+            }
 
             for (stream_id, key_values) in key.stream_map.range(starting_range..=ending_range) {
                 let mut vec_id = vec![];
@@ -220,6 +223,9 @@ impl StreamDB {
                     vec_id.push(Value::BulkString(format!("{}", value)));
                 }
                 ans.push(Value::Array(vec![Value::BulkString(format!("{}-{}", stream_id.0, stream_id.1)), Value::Array(vec_id)]))
+            }
+            if ans.is_empty() {
+                return Ok(Value::NullBulkString());
             }
             return Ok(Value::Array(ans));
         }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::watch;
-use tokio::time::{Instant, timeout, Duration};
+use tokio::time::{Instant, timeout, Duration, sleep};
 use crate::{RedisServer, unpack_bulk_str};
 use crate::db::{KeyValueData, StreamDB, StreamValueType};
 use crate::rdb::RDBError;
@@ -206,47 +206,56 @@ pub fn cmd_xrange(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<V
     stream_db_lock.read_range(stream_key, starting_range, ending_range)
 }
 
-pub fn cmd_xread(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Value, RDBError> {
+pub async fn cmd_xread(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Value, RDBError> {
     if args.is_empty() { return Err(StreamEntryError("not one arg after the XREAD command.".to_string())); }
     let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
     let n = args.len();
     let mut streams = vec![];
-    let mut i = 0;
-
-    let ending_range = None;
-    for arg in &args {
-        if arg == &"streams".to_string() {
-            continue;
-        }
-        println!("DEBUG :: arg = {:?}", arg);
-        i += 1;
-        if arg.contains("-") {
-            break;
-        } else {
-            streams.push(arg);
-        }
-    }
     let mut ids = vec![];
-    for ind in i..n {
-        if let Some(start_after_id) = args.get(i) {
-            let mut id_parsed = start_after_id.split('-').map(|i_str| i_str.parse::<u64>());
-            let mut starting_range = None;
-            if let Some(Ok(id_part1)) = id_parsed.next() {
-                if let Some(Ok(id_part2)) = id_parsed.next() {
-                    starting_range = Some((id_part1, Some(id_part2 + 1)));
-                } else {
-                    starting_range = Some((id_part1, None));
+    let mut args = args.iter();
+    let mut wait_time = None;
+    let ending_range = None;
+
+
+    while let (Some(arg)) = args.next() {
+        match arg.as_str() {
+            "streams"   => { continue; },
+            "block"     => {
+                if let Some(wait_arg) = args.next() {
+                    if let Ok(wait_time_inner) = wait_arg.parse::<u64>() {
+                        wait_time = Some(wait_time_inner);
+                    }
                 }
-                ids.push(starting_range)
+            }
+            arg_stream_or_id     => {
+                if arg_stream_or_id.contains("-") {
+                    let mut id_parsed = arg_stream_or_id.split('-').map(|i_str| i_str.parse::<u64>());
+                    let mut starting_range = None;
+                    if let Some(Ok(id_part1)) = id_parsed.next() {
+                        if let Some(Ok(id_part2)) = id_parsed.next() {
+                            starting_range = Some((id_part1, Some(id_part2 + 1)));
+                        } else {
+                            starting_range = Some((id_part1, None));
+                        }
+                        ids.push(starting_range)
+                    }
+                } else {
+                    streams.push(arg);
+                }
             }
         }
     }
+    println!("DEBUG :: streams = {:?} // ids = {:?} // wait_time = {:?}", streams, ids, wait_time);
 
-
+    if let Some(wait_time) = wait_time {
+        println!("Sleeping for {:?} milliseconds", wait_time);
+        sleep(Duration::from_millis(wait_time)).await;
+    }
 
     let mut res = vec![];
     let stream_db_lock = stream_db.lock().unwrap();
     for (i, &stream_key) in streams.iter().enumerate() {
+        println!("DEBUG :: i = {:?} // stream_key = {:?} // ids = {:?}", i, stream_key, ids);
         let starting_range = ids[i];
         println!("DEBUG XREAD :: starting_range = {:?} // stream_key = {:?}", starting_range, stream_key);
         if let Ok(value) = stream_db_lock.read_range(stream_key, starting_range, ending_range) {

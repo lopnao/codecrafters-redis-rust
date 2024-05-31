@@ -393,7 +393,7 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                 },
                 "xread"    => {
                     let stream_data = stream_db_clone.clone();
-                    if let Ok(response_value) = cmd_xread(args, stream_data) {
+                    if let Ok(response_value) = cmd_xread(args, stream_data).await {
                         response_value
                     } else { Value::NullBulkString() }
                 },
