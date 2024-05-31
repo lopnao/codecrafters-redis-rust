@@ -215,6 +215,7 @@ pub async fn cmd_xread(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Res
     let mut args = args.iter();
     let mut wait_time = None;
     let ending_range = None;
+    let mut wait_time_0 = false;
 
 
     while let (Some(arg)) = args.next() {
@@ -248,15 +249,51 @@ pub async fn cmd_xread(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Res
     println!("DEBUG :: streams = {:?} // ids = {:?} // wait_time = {:?}", streams, ids, wait_time);
 
     if let Some(wait_time) = wait_time {
-        println!("Sleeping for {:?} milliseconds", wait_time);
-        sleep(Duration::from_millis(wait_time)).await;
+        match wait_time {
+            0 => {
+                wait_time_0 = true;
+            },
+            wait_time_inner   => {
+                println!("Sleeping for {:?} milliseconds", wait_time_inner);
+                sleep(Duration::from_millis(wait_time_inner)).await;
+            }
+        }
+
     }
 
+
+
     let mut res = vec![];
-    let stream_db_lock = stream_db.lock().unwrap();
+
     for (i, &stream_key) in streams.iter().enumerate() {
-        println!("DEBUG :: i = {:?} // stream_key = {:?} // ids = {:?}", i, stream_key, ids);
+
+        println!("DEBUG :: i = {:?} // stream_key = {:?} // ids = {:?} // wait_time_0 = {:?}", i, stream_key, ids, wait_time_0);
         let starting_range = ids[i];
+
+        if wait_time_0 {
+            // Waiting for a new id which will be >= than starting range
+            if let Ok(mut last_entry) = {
+                let stream_db_lock = stream_db.lock().unwrap();
+                stream_db_lock.get_last_entry_for_stream(stream_key)
+            } {
+                if let Some((id1, Some(id2))) = starting_range {
+                    if last_entry < (id1, id2) {
+                        if let Ok(mut broadcast_receiver) = {
+                            let stream_db_lock = stream_db.lock().unwrap();
+                            stream_db_lock.get_broadcaster_receiver(stream_key)
+                        } {
+                            while last_entry < (id1, id2) {
+                                println!("On attend ici que last_entry = {:?} (presentement) soit >= à {:?}", last_entry, (id1, id2));
+                                if let Ok(last_entry_rcv) = broadcast_receiver.recv().await {
+                                    last_entry = last_entry_rcv;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let stream_db_lock = stream_db.lock().unwrap();
         println!("DEBUG XREAD :: starting_range = {:?} // stream_key = {:?}", starting_range, stream_key);
         if let Ok(value) = stream_db_lock.read_range(stream_key, starting_range, ending_range) {
             res.push(Value::Array(vec![Value::BulkString(stream_key.clone()), value]));
