@@ -33,6 +33,7 @@ pub enum RDBError {
 
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 struct RDBFile {
     name: String,
     fields: Vec<RDBField>,
@@ -92,6 +93,7 @@ impl MagicField {
     }
 }
 
+#[allow(dead_code)]
 trait ToHex {
     fn to_hex(&self) -> Vec<u8>;
 }
