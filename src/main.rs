@@ -346,6 +346,8 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                      watch_replicas_count_rx_clone: watch::Receiver<usize>) {
     let mut handler = RespHandler::new(stream);
     let mut to_replicate = false;
+    let mut multi_bool = false;
+    let mut commands_queue: Vec<Value> = vec![];
     let mut master_offset = (0_usize, 0_usize);
     let ack_command_to_check = Value::Array(vec![
         Value::BulkString("REPLCONF".to_string()),
@@ -358,12 +360,16 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
         let value = handler.read_value().await.unwrap();
         println!("Got value {:?}", value);
 
+
         let response = if let Some(v) = value {
             let value_to_propagate = v.clone();
             let (command, args) = extract_command(v).unwrap();
             match command.to_ascii_lowercase().as_str() {
                 "ping"  => Value::SimpleString("PONG".to_string()),
                 "echo"  => args.first().unwrap().clone(),
+                "multi" => {
+                    Value::SimpleString("OK".to_string())
+                },
                 "set"   => {
                     slave_tx.send(value_to_propagate).await.unwrap();
                     let data2 = Arc::clone(&data1);
