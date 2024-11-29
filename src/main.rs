@@ -18,7 +18,7 @@ use commands::server_info;
 use db::KeyValueData;
 use crate::commands::{cmd_keys, cmd_xadd, cmd_xrange, cmd_xread, get_type, server_config, wait_or_replicas};
 use crate::connect::{configure_replica, connect_to_master, psync, send_rdb_base64_to_hex};
-use crate::db::{data_get, data_set, data_set_from_rdb, key_expiry_thread, StreamDB};
+use crate::db::{data_get, data_incr, data_set, data_set_from_rdb, key_expiry_thread, StreamDB};
 use crate::rdb::read_rdb_file;
 use crate::resp::RespHandler;
 use crate::resp::CommandRedis::{GoodAckFromReplica, UpdateReplicasCount};
@@ -369,6 +369,11 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     let data2 = Arc::clone(&data1);
                     let exp_heap2 = Arc::clone(&exp_heap1);
                     data_set(args, data2, exp_heap2)
+                },
+                "incr"   => {
+                    slave_tx.send(value_to_propagate).await.unwrap();
+                    let data2 = Arc::clone(&data1);
+                    data_incr(args, data2)
                 },
                 "get"   => {
                     let data2 = Arc::clone(&data1);

@@ -1,6 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, BTreeMap, HashMap};
-use std::fmt::{Display, Formatter, Write};
+use std::fmt::{Display, Formatter};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::SystemTime;
@@ -36,6 +36,25 @@ pub fn data_set(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>
     }
 }
 
+pub fn data_incr(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>>>) -> Value {
+    let mut data1 = data1.lock().unwrap();
+    match args.len() {
+        1   => {
+            let key = unpack_bulk_str(args[0].clone()).unwrap();
+            // If the value is indeed in there
+            if let Some(key_value) = data1.get_mut(&key) {
+                if let Ok(mut value) = key_value.value.parse::<i64>() {
+                    value += 1;
+                    key_value.value = value.to_string();
+                    return Value::SimpleInteger(value);
+                }
+            }
+            Value::SimpleString("NOK".to_string())
+        }
+        _ => { Value::SimpleString("NOK".to_string()) }
+    }
+}
+
 pub fn data_set_from_rdb(rdbfile_struct: RDBFileStruct, data1: Arc<Mutex<HashMap<String, KeyValueData>>>, heap1: Arc<Mutex<BinaryHeap<(Reverse<Instant>, String)>>>) {
     let mut data1 = data1.lock().unwrap();
     let mut heap1 = heap1.lock().unwrap();
@@ -49,7 +68,7 @@ pub fn data_set_from_rdb(rdbfile_struct: RDBFileStruct, data1: Arc<Mutex<HashMap
                     if let Some(key_value_to_insert) = key_value_data {
                         println!("Inserting : {:?} : {:?}", key.clone().to_string(), key_value_to_insert);
                         if key_value_to_insert.expires {
-                            heap1.push((Reverse(key_value_to_insert.expiring_at.clone()), key_value_to_insert.key.clone()));
+                            heap1.push((Reverse(key_value_to_insert.expiring_at), key_value_to_insert.key.clone()));
                         }
                         data1.insert(key.to_string(), key_value_to_insert);
                     } else {
@@ -74,6 +93,7 @@ pub fn data_get(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData>
     } else { Value::SimpleString("ERROR".to_string()) }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum StreamValueType {
     String(String),
@@ -102,7 +122,7 @@ pub struct StreamEntity {
 
 impl StreamEntity {
     pub fn init() -> Self {
-        let (tx, mut rx1) = sync::broadcast::channel(16);
+        let (tx, rx1) = sync::broadcast::channel(16);
         Self {
             stream_map: BTreeMap::new(),
             last_entry: (0, 0),
@@ -111,10 +131,12 @@ impl StreamEntity {
         }
     }
 
+    #[allow(dead_code)]
     pub fn check_last_entry(&self) -> (u64, u64) {
         self.last_entry
     }
 
+    #[allow(dead_code)]
     pub fn get_receiver(&self) -> sync::broadcast::Receiver<(u64, u64)> {
         self.broadcaster_receiver.resubscribe()
     }
@@ -133,7 +155,7 @@ impl StreamEntity {
         println!("Current last_entry = {:?} // Current map = {:?}", self.last_entry, self.stream_map);
         let now_id = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64;
         let mut id_part2 = 0;
-        return if let Some((requested_id_part1, opt_requested_id_part2)) = requested_id {
+        if let Some((requested_id_part1, opt_requested_id_part2)) = requested_id {
             if let Some(requested_id_part2) = opt_requested_id_part2 {
                 if requested_id_part1 == 0 && requested_id_part2 == 0 {
                     return Err(Id00Error)
@@ -186,7 +208,7 @@ impl StreamDB {
     }
 
     pub fn add_id(&mut self, key: String, id: Option<(u64, Option<u64>)>, keyvalues: Vec<(String, StreamValueType)>) -> Result<(u64, u64), RDBError> {
-        if let Some(mut key_map) = self.streams.get_mut(&key) {
+        if let Some(key_map) = self.streams.get_mut(&key) {
             let id = key_map.generate_new_id(id)?;
 
             // Insert the key_values and change the last_entry to the current id
@@ -199,6 +221,7 @@ impl StreamDB {
         Err(StreamEntryError("error while adding id to the stream key".to_string()))
     }
 
+    #[allow(dead_code)]
     pub fn read_id(&self, key: &str, id: (u64, u64)) -> Result<Vec<(String, StreamValueType)>, RDBError> {
 
         if let Some(key) = self.streams.get(key) {
@@ -264,12 +287,14 @@ impl StreamDB {
 
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum KeyValueType {
     StringType,
     NoneType,
     StreamType(BTreeMap<String, BTreeMap<String, Vec<KeyValueData>>>)
 }
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct KeyValueData {
     key: String,

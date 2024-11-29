@@ -7,6 +7,7 @@ use crate::db::KeyValueData;
 use crate::rdb::RDBError::ParsingError;
 use crate::rdb::StringEncodedValue::{StringEncodedString, StringEncodedI8, ListEncodedString, SortedSetEncodedString, StringEncodedI32, StringEncodedI16, NoneValue};
 
+#[allow(dead_code)]
 #[derive(Error, Debug)]
 #[derive(PartialEq)]
 pub enum RDBError {
