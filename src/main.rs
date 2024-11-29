@@ -347,7 +347,9 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
     let mut handler = RespHandler::new(stream);
     let mut to_replicate = false;
     let mut multi_bool = false;
-    let mut commands_queue: Vec<Value> = vec![];
+    let mut to_exec = false;
+    let mut commands_queue: Vec<Option<Value>> = vec![];
+    let mut commands_resp: Vec<Value> = vec![];
     let mut master_offset = (0_usize, 0_usize);
     let ack_command_to_check = Value::Array(vec![
         Value::BulkString("REPLCONF".to_string()),
@@ -357,7 +359,33 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
     println!("Starting read loop");
 
     loop {
-        let value = handler.read_value().await.unwrap();
+        let value = if multi_bool && !to_exec {
+            let temp_value = handler.read_value().await.unwrap();
+            if let Some(v) = temp_value.clone() {
+                let (command, _args) = extract_command(v).unwrap();
+                if command.to_ascii_lowercase().as_str() == "exec" {
+                    to_exec = true;
+                    continue;
+                }
+            }
+            commands_queue.push(temp_value.clone());
+            handler.write_value(Value::SimpleString("QUEUED".to_string())).await.unwrap();
+            continue;
+        } else if !to_exec {
+            handler.read_value().await.unwrap()
+        } else { // Exec time !
+            if let Some(&ref queued_cmd) = commands_queue.iter().next().clone() {
+                queued_cmd.clone()
+            } else {
+                handler.write_value(Value::Array(commands_resp.clone())).await.unwrap();
+                commands_resp.clear();
+                multi_bool = false;
+                to_exec = false;
+                continue;
+            }
+        };
+
+
         println!("Got value {:?}", value);
 
 
@@ -368,12 +396,17 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                 "ping"  => Value::SimpleString("PONG".to_string()),
                 "echo"  => args.first().unwrap().clone(),
                 "multi" => {
+                    multi_bool = true;
                     Value::SimpleString("OK".to_string())
                 },
                 "exec" => {
                     if multi_bool {
                         multi_bool = false;
-                        Value::SimpleString("QUEUED".to_string())
+                        if commands_queue.is_empty() {
+                            Value::Array(vec![])
+                        } else {
+                            Value::Array(commands_resp.clone())
+                        }
                     } else {
                         Value::SimpleError("ERR EXEC without MULTI".to_string())
                     }
