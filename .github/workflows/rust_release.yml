@@ -20,7 +20,7 @@ jobs:
         run: |
           gh release create "$tag" \
               --repo="$GITHUB_REPOSITORY" \
-              --title="${GITHUB_REPOSITORY#*/} ${tag#v}" \
+              --title="${GITHUB_REPOSITORY#*/} ok " \
               --generate-notes
       - name: Build
         run: cargo build --release
