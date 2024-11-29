@@ -48,6 +48,9 @@ pub fn data_incr(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData
                     key_value.value = value.to_string();
                     return Value::SimpleInteger(value);
                 }
+            } else {
+                data1.insert(key.clone(), KeyValueData::new(key.clone(), "1".to_string(), 0));
+                return Value::SimpleInteger(1);
             }
             Value::SimpleString("NOK".to_string())
         }
