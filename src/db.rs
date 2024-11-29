@@ -46,13 +46,15 @@ pub fn data_incr(args: Vec<Value>, data1: Arc<Mutex<HashMap<String, KeyValueData
                 if let Ok(mut value) = key_value.value.parse::<i64>() {
                     value += 1;
                     key_value.value = value.to_string();
-                    return Value::SimpleInteger(value);
+                    Value::SimpleInteger(value)
+                } else {
+                    Value::SimpleError("ERR value is not an integer or out of range".to_string())
                 }
             } else {
                 data1.insert(key.clone(), KeyValueData::new(key.clone(), "1".to_string(), 0));
-                return Value::SimpleInteger(1);
+                Value::SimpleInteger(1)
             }
-            Value::SimpleString("NOK".to_string())
+            //Value::SimpleString("NOK".to_string())
         }
         _ => { Value::SimpleString("NOK".to_string()) }
     }
