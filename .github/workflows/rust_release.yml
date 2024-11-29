@@ -11,18 +11,7 @@ env:
 
 jobs:
   release:
-
     runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
-
-      name: Release pushed tag
-    runs-on: ubuntu-22.04
     steps:
       - name: Create release
         env:
