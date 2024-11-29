@@ -366,6 +366,13 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                 if command.to_ascii_lowercase().as_str() == "exec" {
                     to_exec = true;
                     continue;
+                } else if command.to_ascii_lowercase().as_str() == "discard" {
+                    commands_resp.clear();
+                    commands_queue.clear();
+                    multi_bool = false;
+                    to_exec = false;
+                    handler.write_value(Value::SimpleString("OK".to_string())).await.unwrap();
+                    continue;
                 }
             }
             commands_queue.push_back(temp_value.clone());
@@ -400,6 +407,9 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     multi_bool = true;
                     Value::SimpleString("OK".to_string())
                 },
+                "discard" => {
+                    Value::SimpleError("ERR DISCARD without MULTI".to_string())
+                }
                 "exec" => {
                     if multi_bool {
                         multi_bool = false;
