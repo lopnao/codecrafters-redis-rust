@@ -705,8 +705,8 @@ mod tests {
                    Ok((Some(AuxiliaryField { keys: vec![StringEncodedString("redis-ver".to_string()), StringEncodedString("redis-bits".to_string()),
                                                         StringEncodedString("ctime".to_string()), StringEncodedString("used-mem".to_string()),
                                                         StringEncodedString("aof-base".to_string())],
-                                            values: vec![StringEncodedString("7.2.0".to_string()), StringEncodedI8(64), StringEncodedI32(1829289061),
-                                                        StringEncodedI32(-1329328128), StringEncodedI8(0)] }), 70)));
+                                            values: vec![StringEncodedString("7.2.0".to_string()), StringEncodedI8(64), StringEncodedI32(1706821741),
+                                                        StringEncodedI32(1098928), StringEncodedI8(0)] }), 70)));
     }
 
     // fn test_index() {
