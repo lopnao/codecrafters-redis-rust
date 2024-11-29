@@ -370,6 +370,15 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                 "multi" => {
                     Value::SimpleString("OK".to_string())
                 },
+                "exec" => {
+                    if multi_bool {
+                        multi_bool = false;
+                        Value::SimpleString("QUEUED".to_string())
+                    } else {
+                        Value::SimpleError("ERR EXEC without MULTI".to_string())
+                    }
+
+                },
                 "set"   => {
                     slave_tx.send(value_to_propagate).await.unwrap();
                     let data2 = Arc::clone(&data1);
