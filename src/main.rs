@@ -1,5 +1,5 @@
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::{io, thread};
 use resp::Value;
@@ -348,7 +348,7 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
     let mut to_replicate = false;
     let mut multi_bool = false;
     let mut to_exec = false;
-    let mut commands_queue: Vec<Option<Value>> = vec![];
+    let mut commands_queue: VecDeque<Option<Value>> = VecDeque::new();
     let mut commands_resp: Vec<Value> = vec![];
     let mut master_offset = (0_usize, 0_usize);
     let ack_command_to_check = Value::Array(vec![
@@ -368,17 +368,18 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
                     continue;
                 }
             }
-            commands_queue.push(temp_value.clone());
+            commands_queue.push_back(temp_value.clone());
             handler.write_value(Value::SimpleString("QUEUED".to_string())).await.unwrap();
             continue;
         } else if !to_exec {
             handler.read_value().await.unwrap()
         } else { // Exec time !
-            if let Some(&ref queued_cmd) = commands_queue.iter().next().clone() {
+            if let Some(queued_cmd) = commands_queue.pop_front() {
                 queued_cmd.clone()
             } else {
                 handler.write_value(Value::Array(commands_resp.clone())).await.unwrap();
                 commands_resp.clear();
+                commands_queue.clear();
                 multi_bool = false;
                 to_exec = false;
                 continue;
@@ -488,6 +489,10 @@ async fn handle_conn(stream: TcpStream, server_info_clone: Arc<Mutex<RedisServer
             // Jumping to the propagation loop
             break;
         } else {
+            if to_exec {
+                commands_resp.push(response);
+                continue;
+            }
             println!("Sending value {:?}", response);
             println!("Serialized = {:?}", response.clone().serialize());
 
