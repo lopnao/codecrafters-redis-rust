@@ -155,7 +155,8 @@ pub fn cmd_xadd(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Val
                 stream_db_lock.add_stream_key(stream_key.clone());
             }
             return match stream_db_lock.add_id(stream_key.clone(), option_id, key_values.clone()) {
-                Ok((part1, part2)) => Ok(Value::SimpleString(format!("{}-{}", part1, part2))),
+                // Ok((part1, part2)) => Ok(Value::SimpleString(format!("{}-{}", part1, part2))),
+                Ok((part1, part2)) => Ok(Value::BulkString(format!("{}-{}", part1, part2))),
                 Err(e) => {
                     match e {
                         RDBError::RequestedIdNotAvailable(_) => {
@@ -209,7 +210,7 @@ pub fn cmd_xrange(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<V
 pub async fn cmd_xread(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Result<Value, RDBError> {
     if args.is_empty() { return Err(StreamEntryError("not one arg after the XREAD command.".to_string())); }
     let args: Vec<String> = args.iter().map(|arg| unpack_bulk_str(arg.clone()).unwrap()).collect();
-    let n = args.len();
+    let _n = args.len();
     let mut streams = vec![];
     let mut ids = vec![];
     let mut args = args.iter();
@@ -218,7 +219,7 @@ pub async fn cmd_xread(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Res
     let mut wait_time_0 = false;
 
 
-    while let (Some(arg)) = args.next() {
+    while let Some(arg) = args.next() {
         match arg.as_str() {
             "streams"   => { continue; },
             "block"     => {
@@ -234,7 +235,7 @@ pub async fn cmd_xread(args: Vec<Value>, stream_db: Arc<Mutex<StreamDB>>) -> Res
                         ids.push(Some((u64::MAX, Some(u64::MAX))));
                     } else {
                         let mut id_parsed = arg_stream_or_id.split('-').map(|i_str| i_str.parse::<u64>());
-                        let mut starting_range = None;
+                        let starting_range;
                         if let Some(Ok(id_part1)) = id_parsed.next() {
                             if let Some(Ok(id_part2)) = id_parsed.next() {
                                 starting_range = Some((id_part1, Some(id_part2 + 1)));
