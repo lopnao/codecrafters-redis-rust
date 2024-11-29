@@ -16,8 +16,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+      - name: Add Windows Target for Rust
+        run: rustup target add x86_64-pc-windows-gnu
       - name: Build
-        run: cargo build --release
+        run: cargo build --target x86_64-pc-windows-gnu --release
       - name: LS
         run: ls -al ./target/release/
       - name: Build project # This would actually build your project, using zip for an example artifact
